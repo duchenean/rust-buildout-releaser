@@ -1,1 +1,44 @@
-/target
+# === Rust / Cargo ===
+/target/
+/debug/
+/release/
+
+# Cargo backup files
+**/*.rs.bk
+
+# === IDEs / Editors ===
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# JetBrains (CLion / IntelliJ / RustRover)
+.idea/
+
+# Sublime
+*.sublime-workspace
+*.sublime-project
+
+# Vim
+*.swp
+*.swo
+.session
+
+# Emacs
+*~
+\#*\#
+.\#*
+
+# Eclipse
+.project
+.cproject
+.settings/
+
+# === OS-specific junk ===
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
