@@ -1,4 +1,4 @@
-name: Rust CI/CD
+name: Rust CI & Release
 
 on:
   push:
@@ -6,13 +6,15 @@ on:
   pull_request:
     branches: [ "main" ]
   release:
-    types: [created] # when you create a new GitHub Release
+    types: [created]  # or [published]
 
 env:
   CARGO_TERM_COLOR: always
 
+permissions:
+  contents: write  # needed to modify releases with GITHUB_TOKEN
+
 jobs:
-  # --- CI job: build + test on push/PR ---
   ci:
     runs-on: ubuntu-latest
     steps:
@@ -24,10 +26,9 @@ jobs:
       - name: Build (debug)
         run: cargo build --verbose
 
-      - name: Run tests
+      - name: Test
         run: cargo test --verbose
 
-  # --- Release job: build release binary + upload asset ---
   release:
     runs-on: ubuntu-latest
     needs: ci
@@ -41,21 +42,20 @@ jobs:
       - name: Build release binary
         run: cargo build --release --verbose
 
-      # Adjust binary name and paths as needed
-      - name: Prepare artifact
+      - name: Package binary
         run: |
           mkdir -p dist
-          # Replace `rust-buildout-releaser` with your actual binary name
+          # binary name = package name from Cargo.toml: rust-buildout-releaser
           cp target/release/rust-buildout-releaser dist/
           cd dist
           tar czf rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz rust-buildout-releaser
 
-      - name: Upload asset to GitHub Release
-        uses: actions/upload-release-asset@v1
+      - name: Upload asset to GitHub Release (via gh)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ github.event.release.upload_url }}
-          asset_path: dist/rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz
-          asset_name: rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz
-          asset_content_type: application/gzip
+        run: |
+          # github.ref_name is the tag name on a release event, e.g. v0.1.0
+          gh release upload "$GITHUB_REF_NAME" \
+            dist/rust-buildout-releaser-${GITHUB_REF_NAME}-linux-amd64.tar.gz \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
