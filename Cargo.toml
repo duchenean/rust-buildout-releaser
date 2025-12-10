@@ -1,0 +1,38 @@
+[package]
+name = "rust-buildout-releaser"
+version = "0.1.0"
+edition = "2021"
+description = "A zc.buildout package releaser tool"
+authors = ["Your Name <your.email@example.com>"]
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+
+# Async runtime & HTTP
+tokio = { version = "1.34", features = ["full"] }
+reqwest = { version = "0.11", features = ["json"] }
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.8"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Regex for parsing buildout files
+regex = "1.10"
+
+# Colored output
+colored = "2.0"
+
+# Semver parsing
+semver = "1.0"
+
+# Interactive prompts
+dialoguer = "0.11"
+
+# Git operations (optional, we'll mainly use CLI)
+# git2 = "0.18"  # Uncomment if you want libgit2 bindings
