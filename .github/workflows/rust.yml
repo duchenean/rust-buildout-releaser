@@ -1,22 +1,61 @@
-name: Rust
+name: Rust CI/CD
 
 on:
   push:
     branches: [ "main" ]
   pull_request:
     branches: [ "main" ]
+  release:
+    types: [created] # when you create a new GitHub Release
 
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
-
+  # --- CI job: build + test on push/PR ---
+  ci:
     runs-on: ubuntu-latest
-
     steps:
-    - uses: actions/checkout@v4
-    - name: Build
-      run: cargo build --verbose
-    - name: Run tests
-      run: cargo test --verbose
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build (debug)
+        run: cargo build --verbose
+
+      - name: Run tests
+        run: cargo test --verbose
+
+  # --- Release job: build release binary + upload asset ---
+  release:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.event_name == 'release'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      # Adjust binary name and paths as needed
+      - name: Prepare artifact
+        run: |
+          mkdir -p dist
+          # Replace `rust-buildout-releaser` with your actual binary name
+          cp target/release/rust-buildout-releaser dist/
+          cd dist
+          tar czf rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz rust-buildout-releaser
+
+      - name: Upload asset to GitHub Release
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ github.event.release.upload_url }}
+          asset_path: dist/rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz
+          asset_name: rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz
+          asset_content_type: application/gzip
