@@ -8,6 +8,10 @@ pub struct Cli {
     #[arg(short, long, default_value = "bldr.toml")]
     pub config: String,
 
+    /// Run without interactive prompts (CI-friendly)
+    #[arg(long)]
+    pub non_interactive: bool,
+
     /// Verbose output
     #[arg(short, long)]
     pub verbose: bool,
