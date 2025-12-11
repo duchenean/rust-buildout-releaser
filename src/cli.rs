@@ -35,6 +35,13 @@ impl From<CliChangelogFormat> for crate::config::ChangelogFormat {
 
 #[derive(Subcommand)]
 pub enum Commands {
+    /// Generate shell completion scripts
+    Completions {
+        /// Shell to generate completions for
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
+
     /// Initialize a new configuration file
     Init {
         /// Force overwrite existing config
