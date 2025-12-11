@@ -183,6 +183,10 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<String>,
 
+        /// Force output to stdout, even if configured to write to a file
+        #[arg(long, conflicts_with = "output")]
+        stdout: bool,
+
         /// Release version for the changelog header
         #[arg(long)]
         release_version: Option<String>,
