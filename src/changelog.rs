@@ -5,6 +5,8 @@ use crate::buildout::VersionUpdate;
 use crate::config::{ChangelogConfig, ChangelogFormat, PackageConfig};
 use crate::error::{ReleaserError, Result};
 
+const USER_AGENT: &str = concat!("bldr/", env!("CARGO_PKG_VERSION"));
+
 #[derive(Debug, Clone)]
 pub struct PackageChangelog {
     pub package_name: String,
@@ -47,7 +49,7 @@ impl ChangelogCollector {
 
         Self {
             client: Client::builder()
-                .user_agent("buildout-releaser/0.1.0")
+                .user_agent(USER_AGENT)
                 .build()
                 .expect("Failed to create HTTP client"),
             changelog_files: config.changelog_files.clone(),

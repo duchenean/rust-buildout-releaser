@@ -37,7 +37,7 @@ async fn run() -> Result<()> {
             clap_complete::generate(
                 shell,
                 &mut command,
-                "buildout-releaser",
+                "bldr",
                 &mut std::io::stdout(),
             );
             Ok(())
