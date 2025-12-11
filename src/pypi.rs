@@ -2,6 +2,8 @@ use crate::error::{ReleaserError, Result};
 use crate::version::python::{parse_python_version, parse_version_constraint};
 use serde::Deserialize;
 
+const USER_AGENT: &str = concat!("bldr/", env!("CARGO_PKG_VERSION"));
+
 #[derive(Debug, Deserialize)]
 pub struct PyPiPackageInfo {
     pub info: PackageInfo,
@@ -41,7 +43,7 @@ impl PyPiClient {
     pub fn new() -> Self {
         Self {
             client: reqwest::Client::builder()
-                .user_agent("buildout-releaser/0.1.0")
+                .user_agent(USER_AGENT)
                 .build()
                 .expect("Failed to create HTTP client"),
             base_url: "https://pypi.org/pypi".to_string(),

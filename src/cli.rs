@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
-#[command(name = "buildout-releaser")]
+#[command(name = "bldr")]
 #[command(author, version, about = "A zc.buildout package releaser tool", long_about = None)]
 pub struct Cli {
     /// Path to config file

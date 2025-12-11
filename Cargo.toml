@@ -5,6 +5,10 @@ edition = "2021"
 description = "A zc.buildout package releaser tool"
 authors = ["Your Name <your.email@example.com>"]
 
+[[bin]]
+name = "bldr"
+path = "src/main.rs"
+
 [dependencies]
 # CLI
 clap = { version = "4.4", features = ["derive"] }
