@@ -257,80 +257,95 @@ pub mod python {
     }
 }
 
-/// Semantic version representation
+/// Semantic version representation backed by the semver crate
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Version {
-    pub major: u32,
-    pub minor: u32,
-    pub patch: u32,
-    pub prerelease: Option<String>,
+    inner: semver::Version,
 }
 
 impl Version {
     /// Parse a version string
     pub fn parse(s: &str) -> Result<Self> {
-        let s = s.trim().trim_start_matches('v');
+        let normalized = s.trim().trim_start_matches('v');
 
-        // Pattern: major.minor.patch[-prerelease]
-        let re = Regex::new(r"^(\d+)\.(\d+)(?:\.(\d+))?(?:-(.+))?$")
-            .map_err(|e| ReleaserError::VersionError(e.to_string()))?;
+        let parsed = semver::Version::parse(normalized)
+            .or_else(|_| {
+                python::parse_python_version(normalized)
+                    .ok_or_else(|| ReleaserError::VersionError(normalized.to_string()))
+            })?;
 
-        let caps = re
-            .captures(s)
-            .ok_or_else(|| ReleaserError::VersionError(format!("Invalid version format: {}", s)))?;
-
-        Ok(Self {
-            major: caps[1].parse().unwrap(),
-            minor: caps[2].parse().unwrap(),
-            patch: caps
-                .get(3)
-                .map(|m| m.as_str().parse().unwrap())
-                .unwrap_or(0),
-            prerelease: caps.get(4).map(|m| m.as_str().to_string()),
-        })
+        Ok(Self { inner: parsed })
     }
 
     /// Create a new version
     pub fn new(major: u32, minor: u32, patch: u32) -> Self {
         Self {
-            major,
-            minor,
-            patch,
-            prerelease: None,
+            inner: semver::Version::new(major as u64, minor as u64, patch as u64),
         }
     }
 
     /// Bump the version according to the bump type
     pub fn bump(&self, bump_type: VersionBumpType) -> Self {
+        let mut bumped = self.inner.clone();
+
         match bump_type {
-            VersionBumpType::Major => Self {
-                major: self.major + 1,
-                minor: 0,
-                patch: 0,
-                prerelease: None,
-            },
-            VersionBumpType::Minor => Self {
-                major: self.major,
-                minor: self.minor + 1,
-                patch: 0,
-                prerelease: None,
-            },
-            VersionBumpType::Patch => Self {
-                major: self.major,
-                minor: self.minor,
-                patch: self.patch + 1,
-                prerelease: None,
-            },
+            VersionBumpType::Major => {
+                bumped.major += 1;
+                bumped.minor = 0;
+                bumped.patch = 0;
+            }
+            VersionBumpType::Minor => {
+                bumped.minor += 1;
+                bumped.patch = 0;
+            }
+            VersionBumpType::Patch => {
+                bumped.patch += 1;
+            }
+        }
+
+        bumped.pre = semver::Prerelease::EMPTY;
+        bumped.build = semver::BuildMetadata::EMPTY;
+
+        Self { inner: bumped }
+    }
+
+    /// Get the major component
+    pub fn major(&self) -> u64 {
+        self.inner.major
+    }
+
+    /// Get the minor component
+    pub fn minor(&self) -> u64 {
+        self.inner.minor
+    }
+
+    /// Get the patch component
+    pub fn patch(&self) -> u64 {
+        self.inner.patch
+    }
+
+    /// Get prerelease identifier if present
+    pub fn prerelease(&self) -> Option<&str> {
+        if self.inner.pre.is_empty() {
+            None
+        } else {
+            Some(self.inner.pre.as_str())
+        }
+    }
+
+    /// Get build metadata if present
+    pub fn build_metadata(&self) -> Option<&str> {
+        if self.inner.build.is_empty() {
+            None
+        } else {
+            Some(self.inner.build.as_str())
         }
     }
 }
 
 impl std::fmt::Display for Version {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match &self.prerelease {
-            Some(pre) => write!(f, "{}.{}.{}-{}", self.major, self.minor, self.patch, pre),
-            None => write!(f, "{}.{}.{}", self.major, self.minor, self.patch),
-        }
+        write!(f, "{}", self.inner)
     }
 }
 
@@ -342,26 +357,7 @@ impl PartialOrd for Version {
 
 impl Ord for Version {
     fn cmp(&self, other: &Self) -> Ordering {
-        match self.major.cmp(&other.major) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        match self.minor.cmp(&other.minor) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        match self.patch.cmp(&other.patch) {
-            Ordering::Equal => {}
-            ord => return ord,
-        }
-        // Pre-release versions are less than release versions
-        // e.g., 1.0.0-alpha < 1.0.0
-        match (&self.prerelease, &other.prerelease) {
-            (None, None) => Ordering::Equal,
-            (Some(_), None) => Ordering::Less,
-            (None, Some(_)) => Ordering::Greater,
-            (Some(a), Some(b)) => a.cmp(b),
-        }
+        self.inner.cmp(&other.inner)
     }
 }
 
@@ -680,22 +676,29 @@ mod tests {
     #[test]
     fn test_version_parse() {
         let v = Version::parse("1.2.3").unwrap();
-        assert_eq!(v.major, 1);
-        assert_eq!(v.minor, 2);
-        assert_eq!(v.patch, 3);
-        assert_eq!(v.prerelease, None);
+        assert_eq!(v.major(), 1);
+        assert_eq!(v.minor(), 2);
+        assert_eq!(v.patch(), 3);
+        assert_eq!(v.prerelease(), None);
 
         let v = Version::parse("v2.0.0-beta.1").unwrap();
-        assert_eq!(v.major, 2);
-        assert_eq!(v.minor, 0);
-        assert_eq!(v.patch, 0);
-        assert_eq!(v.prerelease, Some("beta.1".to_string()));
+        assert_eq!(v.major(), 2);
+        assert_eq!(v.minor(), 0);
+        assert_eq!(v.patch(), 0);
+        assert_eq!(v.prerelease(), Some("beta.1"));
+
+        let v = Version::parse("1.2.3+build.5").unwrap();
+        assert_eq!(v.build_metadata(), Some("build.5"));
+        assert_eq!(v.to_string(), "1.2.3+build.5");
+
+        let v = Version::parse("4.2.3.1").unwrap();
+        assert_eq!(v.to_string(), "4.2.3+1");
 
         // Also support X.Y format
         let v = Version::parse("1.2").unwrap();
-        assert_eq!(v.major, 1);
-        assert_eq!(v.minor, 2);
-        assert_eq!(v.patch, 0);
+        assert_eq!(v.major(), 1);
+        assert_eq!(v.minor(), 2);
+        assert_eq!(v.patch(), 0);
     }
 
     #[test]
