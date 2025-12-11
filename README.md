@@ -54,7 +54,7 @@ The default configuration points to a buildout `versions.cfg`, but you can pass 
 - `update` – write the newest versions into your buildout file; use `--yes` to skip prompts or `--dry-run` to preview.
 - `release` – tag and commit a release with optional bumping (`--bump`), custom messages, and push/GitHub toggles.
 - `update-release` – combine update + release in one shot; supports changelog collection (`--changelog` / `--no-changelog`), formats, draft releases, dry runs, and metadata updates.
-- `changelog` – collect package changelogs in markdown/RST/text and write to stdout or a file.
+- `changelog` – collect package changelogs in markdown/RST/text and write to stdout or a file (add `--stdout` to ignore configured files).
 - `version` – display the current or bumped version; `--list-levels` shows available bump keywords.
 - `info` – fetch PyPI metadata for a package; add `--versions` to list all releases.
 - `completions` – generate shell completion scripts (see below).

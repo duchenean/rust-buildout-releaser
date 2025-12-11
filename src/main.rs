@@ -119,6 +119,7 @@ async fn run() -> Result<()> {
             packages,
             format,
             output,
+            stdout,
             release_version,
         } => {
             cmd_changelog(
@@ -126,6 +127,7 @@ async fn run() -> Result<()> {
                 packages,
                 format,
                 output,
+                stdout,
                 release_version,
                 cli.verbose,
             )
@@ -751,6 +753,7 @@ async fn cmd_changelog(
     packages_filter: Option<String>,
     format_override: Option<CliChangelogFormat>,
     output_file_override: Option<String>,
+    force_stdout: bool,
     release_version: Option<String>,
     verbose: bool,
 ) -> Result<()> {
@@ -762,7 +765,11 @@ async fn cmd_changelog(
         .map(|f| f.into())
         .unwrap_or_else(|| config.changelog.format_enum());
 
-    let output_file = output_file_override.or_else(|| config.changelog.output_file.clone());
+    let output_file = if force_stdout {
+        None
+    } else {
+        output_file_override.or_else(|| config.changelog.output_file.clone())
+    };
 
     let packages_to_check = filter_packages(&config.packages, packages_filter.as_deref());
 
