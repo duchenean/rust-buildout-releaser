@@ -47,7 +47,17 @@ async fn run() -> Result<()> {
             packages,
             yes,
             dry_run,
-        } => cmd_update(&cli.config, packages, yes, dry_run, cli.verbose).await,
+        } => {
+            cmd_update(
+                &cli.config,
+                packages,
+                yes,
+                dry_run,
+                cli.non_interactive,
+                cli.verbose,
+            )
+            .await
+        }
         Commands::Release {
             tag,
             bump,
@@ -65,6 +75,7 @@ async fn run() -> Result<()> {
             no_github,
             draft,
             no_metadata,
+            cli.non_interactive,
             cli.verbose,
         ),
         Commands::UpdateRelease {
@@ -99,6 +110,7 @@ async fn run() -> Result<()> {
                 changelog_format,
                 changelog_file,
                 no_metadata,
+                cli.non_interactive,
                 cli.verbose,
             )
             .await
@@ -236,10 +248,18 @@ async fn cmd_update(
     packages_filter: Option<String>,
     auto_confirm: bool,
     dry_run: bool,
+    non_interactive: bool,
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
-    perform_update(&config, packages_filter, auto_confirm, dry_run, verbose).await?;
+    perform_update(
+        &config,
+        packages_filter,
+        auto_confirm || non_interactive,
+        dry_run,
+        verbose,
+    )
+    .await?;
     Ok(())
 }
 
@@ -252,6 +272,7 @@ fn cmd_release(
     no_github: bool,
     draft: bool,
     no_metadata: bool,
+    non_interactive: bool,
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
@@ -269,6 +290,12 @@ fn cmd_release(
 
     // Check for uncommitted changes
     if !git.is_clean()? {
+        if non_interactive {
+            return Err(ReleaserError::GitError(
+                "Uncommitted changes detected. Clean your workspace or rerun without --non-interactive.".to_string(),
+            ));
+        }
+
         println!("{}", "Warning: You have uncommitted changes.".yellow());
 
         let proceed = Confirm::new()
@@ -402,6 +429,7 @@ async fn cmd_update_release(
     changelog_format_override: Option<CliChangelogFormat>,
     changelog_file_override: Option<String>,
     no_metadata: bool,
+    non_interactive: bool,
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
@@ -416,6 +444,8 @@ async fn cmd_update_release(
 
     // Resolve version
     let version_str = resolve_version(&config, &git, tag, bump, verbose)?;
+
+    let auto_confirm = auto_confirm || non_interactive;
 
     // Determine changelog settings
     let collect_changelog = if no_changelog_flag {
@@ -434,6 +464,12 @@ async fn cmd_update_release(
 
     // Check for uncommitted changes
     if !git.is_clean()? {
+        if non_interactive {
+            return Err(ReleaserError::GitError(
+                "Uncommitted changes detected. Clean your workspace or rerun without --non-interactive.".to_string(),
+            ));
+        }
+
         println!("{}", "Warning: You have uncommitted changes.".yellow());
 
         if !auto_confirm {

@@ -42,6 +42,11 @@ The default configuration points to a buildout `versions.cfg`, but you can pass 
 
 ## Commands at a glance
 
+- Global flags:
+  - `--config <path>` – choose a specific `bldr.toml`.
+  - `--verbose` – print extra context while commands run.
+  - `--non-interactive` – skip prompts for CI or other non-TTY environments.
+
 - `init` – scaffold a fresh `bldr.toml` (use `--force` to overwrite).
 - `add` / `remove` – manage tracked packages with optional constraints, buildout aliases, and changelog URLs.
 - `list` – see everything you track (add `--detailed` for extra metadata).
