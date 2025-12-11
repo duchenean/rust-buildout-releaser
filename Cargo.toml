@@ -39,5 +39,8 @@ semver = "1.0"
 # Interactive prompts
 dialoguer = "0.11"
 
+# Date handling
+chrono = { version = "0.4", features = ["clock"] }
+
 # Git operations (optional, we'll mainly use CLI)
 # git2 = "0.18"  # Uncomment if you want libgit2 bindings
