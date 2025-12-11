@@ -32,6 +32,7 @@ regex = "1.10"
 
 # Colored output
 colored = "2.0"
+indicatif = "0.17"
 
 # Semver parsing
 semver = "1.0"

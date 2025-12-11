@@ -10,11 +10,13 @@ mod version;
 use clap::{CommandFactory, Parser};
 use colored::*;
 use dialoguer::{Confirm, MultiSelect};
+use indicatif::{ProgressBar, ProgressStyle};
+use std::time::Duration;
 
 use buildout::{BuildoutVersions, VersionUpdate};
 use changelog::{ChangelogCollector, ConsolidatedChangelog};
 use cli::{Cli, CliChangelogFormat, Commands};
-use config::{ChangelogFormat, Config, PackageConfig};
+use config::{Config, PackageConfig};
 use error::{ReleaserError, Result};
 use git::{GitHubOps, GitOps};
 use pypi::PyPiClient;
@@ -171,10 +173,21 @@ async fn cmd_check(
 
     let packages_to_check = filter_packages(&config.packages, packages_filter.as_deref());
 
+    let progress = if !json_output {
+        create_progress_bar(packages_to_check.len(), "Checking packages")
+    } else {
+        None
+    };
+
     let mut updates = Vec::new();
 
     for pkg_config in &packages_to_check {
-        if verbose {
+        if let Some(pb) = progress.as_ref() {
+            pb.set_message(format!("Checking {}...", pkg_config.name));
+            if verbose {
+                pb.println(format!("Checking {}...", pkg_config.name));
+            }
+        } else if verbose {
             println!("Checking {}...", pkg_config.name);
         }
 
@@ -199,6 +212,14 @@ async fn cmd_check(
             latest_version: latest.version,
             has_update,
         });
+
+        if let Some(pb) = progress.as_ref() {
+            pb.inc(1);
+        }
+    }
+
+    if let Some(pb) = progress {
+        pb.finish_with_message("Package check complete");
     }
 
     if json_output {
@@ -312,6 +333,10 @@ fn cmd_version(
     let config = Config::load(config_path)?;
     let git = GitOps::new();
     let version_manager = VersionManager::new(&config.version);
+
+    if verbose {
+        println!("Using config: {}", config_path);
+    }
 
     if list_levels {
         println!("{}", "Available version bump levels:".cyan().bold());
@@ -467,11 +492,13 @@ async fn cmd_update_release(
         println!("{}", "═".repeat(60).cyan());
 
         let collector = ChangelogCollector::with_config(&config.changelog);
-        println!("{}", "Fetching changelogs from packages...".cyan());
+        let spinner = create_spinner("Fetching changelogs from packages...");
 
         let changelogs = collector
             .collect_changelogs(&updates, &config.packages)
             .await?;
+
+        spinner.finish_with_message("Changelog collection complete");
 
         let found_count = changelogs.iter().filter(|c| !c.entries.is_empty()).count();
         println!(
@@ -989,6 +1016,35 @@ fn resolve_version(
     ))
 }
 
+fn create_progress_bar(len: usize, message: &str) -> Option<ProgressBar> {
+    if len == 0 {
+        return None;
+    }
+
+    let pb = ProgressBar::new(len as u64);
+    pb.set_style(
+        ProgressStyle::with_template(" {spinner:.cyan} {msg} [{bar:40.cyan/blue}] {pos}/{len}")
+            .expect("progress template should be valid")
+            .progress_chars("=>-"),
+    );
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(Duration::from_millis(120));
+
+    Some(pb)
+}
+
+fn create_spinner(message: &str) -> ProgressBar {
+    let pb = ProgressBar::new_spinner();
+    pb.set_style(
+        ProgressStyle::with_template(" {spinner:.cyan} {msg}")
+            .expect("spinner template should be valid")
+            .tick_chars("⠁⠂⠄⡀⢀⠠⠐⠈ "),
+    );
+    pb.set_message(message.to_string());
+    pb.enable_steady_tick(Duration::from_millis(120));
+    pb
+}
+
 async fn perform_update(
     config: &Config,
     packages_filter: Option<String>,
@@ -1005,8 +1061,15 @@ async fn perform_update(
 
     println!("{}", "Checking for updates...".cyan());
 
+    let progress = create_progress_bar(packages_to_check.len(), "Checking packages");
+
     for pkg_config in &packages_to_check {
-        if verbose {
+        if let Some(pb) = progress.as_ref() {
+            pb.set_message(format!("Checking {}...", pkg_config.name));
+            if verbose {
+                pb.println(format!("Checking {}...", pkg_config.name));
+            }
+        } else if verbose {
             println!("  Checking {}...", pkg_config.name);
         }
 
@@ -1032,6 +1095,14 @@ async fn perform_update(
                 ));
             }
         }
+
+        if let Some(pb) = progress.as_ref() {
+            pb.inc(1);
+        }
+    }
+
+    if let Some(pb) = progress {
+        pb.finish_with_message("Update check complete");
     }
 
     if available_updates.is_empty() {
