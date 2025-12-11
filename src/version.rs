@@ -387,6 +387,15 @@ mod python_tests {
         let v = parse_python_version("4.2.3.1").expect("should parse four-segment release");
         assert_eq!(v.to_string(), "4.2.3+1");
 
+        let v = parse_python_version("4.2.3.1rc1").expect("should parse four-segment rc prerelease");
+        assert_eq!(v.to_string(), "4.2.3-rc.1+1");
+
+        let v = parse_python_version("4.2.3.28b3").expect("should parse four-segment beta prerelease");
+        assert_eq!(v.to_string(), "4.2.3-beta.3+28");
+
+        let v = parse_python_version("4.2.4.8a2").expect("should parse four-segment alpha prerelease");
+        assert_eq!(v.to_string(), "4.2.4-alpha.2+8");
+
         let v = parse_python_version("2.5").expect("should parse two-segment release");
         assert_eq!(v.to_string(), "2.5.0");
 
