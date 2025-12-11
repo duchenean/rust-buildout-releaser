@@ -2,9 +2,9 @@ name: Rust CI & Release
 
 on:
   push:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   pull_request:
-    branches: [ "main" ]
+    branches: [ "main", "develop" ]
   release:
     types: [created]  # or [published]
 
@@ -29,6 +29,32 @@ jobs:
       - name: Test
         run: cargo test --verbose
 
+  develop-binary:
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/develop'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build release binary
+        run: cargo build --release --verbose
+
+      - name: Package binary
+        run: |
+          mkdir -p dist
+          cp target/release/bldr dist/
+          cd dist
+          tar czf bldr-${{ github.ref_name }}-linux-amd64.tar.gz bldr
+
+      - name: Upload develop binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: bldr-${{ github.ref_name }}-linux-amd64
+          path: dist/bldr-${{ github.ref_name }}-linux-amd64.tar.gz
+
   release:
     runs-on: ubuntu-latest
     needs: ci
@@ -45,10 +71,9 @@ jobs:
       - name: Package binary
         run: |
           mkdir -p dist
-          # binary name = package name from Cargo.toml: rust-buildout-releaser
-          cp target/release/rust-buildout-releaser dist/
+          cp target/release/bldr dist/
           cd dist
-          tar czf rust-buildout-releaser-${{ github.ref_name }}-linux-amd64.tar.gz rust-buildout-releaser
+          tar czf bldr-${{ github.ref_name }}-linux-amd64.tar.gz bldr
 
       - name: Upload asset to GitHub Release (via gh)
         env:
@@ -56,6 +81,6 @@ jobs:
         run: |
           # github.ref_name is the tag name on a release event, e.g. v0.1.0
           gh release upload "$GITHUB_REF_NAME" \
-            dist/rust-buildout-releaser-${GITHUB_REF_NAME}-linux-amd64.tar.gz \
+            dist/bldr-${GITHUB_REF_NAME}-linux-amd64.tar.gz \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
