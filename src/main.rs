@@ -7,7 +7,7 @@ mod git;
 mod pypi;
 mod version;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
 use colored::*;
 use dialoguer::{Confirm, MultiSelect};
 
@@ -32,6 +32,16 @@ async fn run() -> Result<()> {
     let cli = Cli::parse();
 
     match cli.command {
+        Commands::Completions { shell } => {
+            let mut command = Cli::command();
+            clap_complete::generate(
+                shell,
+                &mut command,
+                "buildout-releaser",
+                &mut std::io::stdout(),
+            );
+            Ok(())
+        }
         Commands::Init { force } => cmd_init(&cli.config, force),
         Commands::Check { packages, json } => {
             cmd_check(&cli.config, packages, json, cli.verbose).await
@@ -94,7 +104,7 @@ async fn run() -> Result<()> {
                 no_metadata,
                 cli.verbose,
             )
-                .await
+            .await
         }
         Commands::Changelog {
             packages,
@@ -110,24 +120,28 @@ async fn run() -> Result<()> {
                 release_version,
                 cli.verbose,
             )
-                .await
+            .await
         }
-        Commands::Version {
-            bump,
-            list_levels,
-        } => cmd_version(&cli.config, bump, list_levels, cli.verbose),
+        Commands::Version { bump, list_levels } => {
+            cmd_version(&cli.config, bump, list_levels, cli.verbose)
+        }
         Commands::Add {
             package,
             constraint,
             buildout_name,
             changelog_url,
-        } => cmd_add(&cli.config, &package, constraint, buildout_name, changelog_url),
+        } => cmd_add(
+            &cli.config,
+            &package,
+            constraint,
+            buildout_name,
+            changelog_url,
+        ),
         Commands::Remove { package } => cmd_remove(&cli.config, &package),
         Commands::List { detailed } => cmd_list(&cli.config, detailed).await,
         Commands::Info { package, versions } => cmd_info(&package, versions).await,
     }
 }
-
 
 // ============================================================================
 // Command Implementations
@@ -283,7 +297,15 @@ fn cmd_release(
         println!("{} Committed metadata changes", "✓".green());
     }
 
-    perform_release(&config, &version_str, message, no_push, no_github, draft, verbose)
+    perform_release(
+        &config,
+        &version_str,
+        message,
+        no_push,
+        no_github,
+        draft,
+        verbose,
+    )
 }
 
 fn cmd_version(
@@ -317,7 +339,10 @@ fn cmd_version(
 
     match current {
         Some(version) => {
-            println!("Current version (from git tags): {}", version.to_string().green());
+            println!(
+                "Current version (from git tags): {}",
+                version.to_string().green()
+            );
 
             if let Some(level) = bump {
                 let bump_type = version_manager.get_bump_type(&level)?;
@@ -477,7 +502,9 @@ async fn cmd_update_release(
         println!("\n{}", "═".repeat(60).cyan());
         println!(
             "{}",
-            format!(" STEP {}: Update Metadata Files", step).cyan().bold()
+            format!(" STEP {}: Update Metadata Files", step)
+                .cyan()
+                .bold()
         );
         println!("{}", "═".repeat(60).cyan());
 
@@ -586,7 +613,11 @@ async fn cmd_update_release(
 
     // Stage metadata files
     for file in &updated_metadata {
-        if config.metadata_files.iter().any(|m| &m.path == file && m.include_in_commit) {
+        if config
+            .metadata_files
+            .iter()
+            .any(|m| &m.path == file && m.include_in_commit)
+        {
             git.add(file)?;
             println!("{} Staged {}", "✓".green(), file);
         }
@@ -879,12 +910,12 @@ async fn cmd_info(package: &str, show_versions: bool) -> Result<()> {
         println!("\n  {}", "Available versions:".cyan());
 
         let mut versions: Vec<_> = info.releases.keys().collect();
-        versions.sort_by(|a, b| {
-            match (semver::Version::parse(a), semver::Version::parse(b)) {
+        versions.sort_by(
+            |a, b| match (semver::Version::parse(a), semver::Version::parse(b)) {
                 (Ok(va), Ok(vb)) => vb.cmp(&va),
                 _ => b.cmp(a),
-            }
-        });
+            },
+        );
 
         for version in versions.iter().take(20) {
             let yanked = info
@@ -1174,10 +1205,7 @@ fn generate_commit_message(
 
     let packages_str = match updates.len() {
         0 => String::new(),
-        1 => format!(
-            "{} = {}",
-            updates[0].package_name, updates[0].new_version
-        ),
+        1 => format!("{} = {}", updates[0].package_name, updates[0].new_version),
         _ => {
             let all_but_last: Vec<_> = updates[..updates.len() - 1]
                 .iter()
