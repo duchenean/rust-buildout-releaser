@@ -1,6 +1,9 @@
 use std::process::Command;
-use crate::error::{ReleaserError, Result};
+
+use chrono::Local;
+
 use crate::buildout::VersionUpdate;
+use crate::error::{ReleaserError, Result};
 
 pub struct GitOps {
     /// Working directory
@@ -24,7 +27,8 @@ impl GitOps {
             cmd.current_dir(dir);
         }
 
-        let output = cmd.args(args)
+        let output = cmd
+            .args(args)
             .output()
             .map_err(|e| ReleaserError::GitError(format!("Failed to run git: {}", e)))?;
 
@@ -143,12 +147,13 @@ impl GitOps {
 
     /// Generate commit message from updates
     pub fn generate_commit_message(updates: &[VersionUpdate], template: &str) -> String {
-        let packages_str = updates.iter()
+        let packages_str = updates
+            .iter()
             .map(|u| format!("{} = {}", u.package_name, u.new_version))
             .collect::<Vec<_>>()
             .join(", ");
 
-        let date = chrono_lite_date();
+        let date = current_date();
 
         template
             .replace("{packages}", &packages_str)
@@ -162,24 +167,8 @@ impl Default for GitOps {
     }
 }
 
-/// Simple date function without pulling in chrono
-fn chrono_lite_date() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
-    let duration = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap();
-
-    let secs = duration.as_secs();
-
-    // Simple date calculation (approximate, good enough for commit messages)
-    let days = secs / 86400;
-    let years = 1970 + days / 365;
-    let remaining_days = days % 365;
-    let months = remaining_days / 30 + 1;
-    let day = remaining_days % 30 + 1;
-
-    format!("{:04}-{:02}-{:02}", years, months, day)
+fn current_date() -> String {
+    Local::now().format("%Y-%m-%d").to_string()
 }
 
 /// GitHub CLI operations
@@ -247,5 +236,25 @@ impl GitHubOps {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn generates_commit_message_with_current_date() {
+        let updates = vec![VersionUpdate {
+            package_name: "example".to_string(),
+            old_version: "0.1.0".to_string(),
+            new_version: "0.2.0".to_string(),
+        }];
+
+        let message = GitOps::generate_commit_message(&updates, "Release on {date}: {packages}");
+
+        let expected_date = Local::now().format("%Y-%m-%d").to_string();
+        assert!(message.contains(&expected_date));
+        assert!(message.contains("example = 0.2.0"));
     }
 }
