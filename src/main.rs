@@ -34,12 +34,7 @@ async fn run() -> Result<()> {
     match cli.command {
         Commands::Completions { shell } => {
             let mut command = Cli::command();
-            clap_complete::generate(
-                shell,
-                &mut command,
-                "bldr",
-                &mut std::io::stdout(),
-            );
+            clap_complete::generate(shell, &mut command, "bldr", &mut std::io::stdout());
             Ok(())
         }
         Commands::Init { force } => cmd_init(&cli.config, force),
@@ -171,7 +166,7 @@ async fn cmd_check(
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
-    let pypi = PyPiClient::new();
+    let pypi = PyPiClient::new()?;
     let buildout = BuildoutVersions::load(&config.versions_file)?;
 
     let packages_to_check = filter_packages(&config.packages, packages_filter.as_deref());
@@ -697,7 +692,7 @@ async fn cmd_changelog(
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
-    let pypi = PyPiClient::new();
+    let pypi = PyPiClient::new()?;
     let buildout = BuildoutVersions::load(&config.versions_file)?;
 
     let format = format_override
@@ -890,7 +885,7 @@ async fn cmd_list(config_path: &str, detailed: bool) -> Result<()> {
 }
 
 async fn cmd_info(package: &str, show_versions: bool) -> Result<()> {
-    let pypi = PyPiClient::new();
+    let pypi = PyPiClient::new()?;
     let info = pypi.get_package_info(package).await?;
 
     println!("{}", info.info.name.yellow().bold());
@@ -1001,7 +996,7 @@ async fn perform_update(
     dry_run: bool,
     verbose: bool,
 ) -> Result<Vec<VersionUpdate>> {
-    let pypi = PyPiClient::new();
+    let pypi = PyPiClient::new()?;
     let mut buildout = BuildoutVersions::load(&config.versions_file)?;
 
     let packages_to_check = filter_packages(&config.packages, packages_filter.as_deref());

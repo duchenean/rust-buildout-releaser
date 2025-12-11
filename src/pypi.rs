@@ -1,8 +1,14 @@
 use crate::error::{ReleaserError, Result};
 use crate::version::python::{parse_python_version, parse_version_constraint};
 use serde::Deserialize;
+use std::time::Duration;
+use tokio::time::sleep;
 
 const USER_AGENT: &str = concat!("bldr/", env!("CARGO_PKG_VERSION"));
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
+const MAX_RETRIES: usize = 3;
+const RETRY_BACKOFF: Duration = Duration::from_millis(300);
 
 #[derive(Debug, Deserialize)]
 pub struct PyPiPackageInfo {
@@ -40,21 +46,56 @@ pub struct PyPiClient {
 }
 
 impl PyPiClient {
-    pub fn new() -> Self {
-        Self {
-            client: reqwest::Client::builder()
-                .user_agent(USER_AGENT)
-                .build()
-                .expect("Failed to create HTTP client"),
+    pub fn new() -> Result<Self> {
+        let client = reqwest::Client::builder()
+            .user_agent(USER_AGENT)
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
+            .build()?;
+
+        Ok(Self {
+            client,
             base_url: "https://pypi.org/pypi".to_string(),
+        })
+    }
+
+    async fn get_with_retry(&self, url: &str) -> Result<reqwest::Response> {
+        let mut last_error: Option<ReleaserError> = None;
+
+        for attempt in 0..MAX_RETRIES {
+            match self.client.get(url).send().await {
+                Ok(response) => {
+                    if response.status().is_server_error() {
+                        last_error = Some(ReleaserError::PyPiError(format!(
+                            "HTTP {} for {}",
+                            response.status(),
+                            url
+                        )));
+                    } else {
+                        return Ok(response);
+                    }
+                }
+                Err(err) => {
+                    last_error = Some(ReleaserError::HttpError(err));
+                }
+            }
+
+            if attempt + 1 < MAX_RETRIES {
+                let delay = RETRY_BACKOFF * 2u32.pow(attempt as u32);
+                sleep(delay).await;
+            }
         }
+
+        Err(last_error.unwrap_or_else(|| {
+            ReleaserError::PyPiError("Failed to contact PyPI after retries".to_string())
+        }))
     }
 
     /// Fetch package information from PyPI
     pub async fn get_package_info(&self, package_name: &str) -> Result<PyPiPackageInfo> {
         let url = format!("{}/{}/json", self.base_url, package_name);
 
-        let response = self.client.get(&url).send().await?;
+        let response = self.get_with_retry(&url).await?;
 
         if response.status() == reqwest::StatusCode::NOT_FOUND {
             return Err(ReleaserError::PackageNotFound(package_name.to_string()));
@@ -153,11 +194,5 @@ impl PyPiClient {
             version: version_str,
             is_prerelease: !parsed_version.pre.is_empty(),
         })
-    }
-}
-
-impl Default for PyPiClient {
-    fn default() -> Self {
-        Self::new()
     }
 }
