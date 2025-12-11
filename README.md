@@ -8,7 +8,7 @@
 - 🧭 **Smart tracking** – follow the packages you care about with optional constraints, buildout aliases, and prerelease toggles.
 - 🧾 **Changelogs on tap** – collect markdown/RST/text notes automatically and feed them straight into commits or GitHub release notes.
 - 🤝 **Git-aware** – commit updates, push, and tag with your preferred templates and branch targeting.
-- 🛠️ **Config-first** – a simple `releaser.toml` drives everything so teams share the same rules.
+- 🛠️ **Config-first** – a simple `bldr.toml` drives everything so teams share the same rules.
 
 ## Install
 
@@ -22,7 +22,7 @@ This installs the `bldr` binary defined in `Cargo.toml` so you can call it from 
 ## Quick start
 
 ```bash
-# 1) Create a default releaser.toml
+# 1) Create a default bldr.toml
 bldr init
 
 # 2) Track the packages you care about
@@ -42,7 +42,7 @@ The default configuration points to a buildout `versions.cfg`, but you can pass 
 
 ## Commands at a glance
 
-- `init` – scaffold a fresh `releaser.toml` (use `--force` to overwrite).
+- `init` – scaffold a fresh `bldr.toml` (use `--force` to overwrite).
 - `add` / `remove` – manage tracked packages with optional constraints, buildout aliases, and changelog URLs.
 - `list` – see everything you track (add `--detailed` for extra metadata).
 - `check` – compare tracked packages against PyPI (add `--packages` or `--json`).
@@ -54,7 +54,7 @@ The default configuration points to a buildout `versions.cfg`, but you can pass 
 - `info` – fetch PyPI metadata for a package; add `--versions` to list all releases.
 - `completions` – generate shell completion scripts (see below).
 
-## Configuration highlights (`releaser.toml`)
+## Configuration highlights (`bldr.toml`)
 
 - **versions_file** – the buildout versions file to rewrite (e.g., `versions.cfg`).
 - **packages** – objects with `name`, optional `version_constraint`, `buildout_name`, `allow_prerelease`, and `changelog_url`.

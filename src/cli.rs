@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 #[command(author, version, about = "A zc.buildout package releaser tool", long_about = None)]
 pub struct Cli {
     /// Path to config file
-    #[arg(short, long, default_value = "releaser.toml")]
+    #[arg(short, long, default_value = "bldr.toml")]
     pub config: String,
 
     /// Verbose output
