@@ -17,9 +17,9 @@
 Use the install helper to grab the latest release for your CPU (x86_64 or aarch64) and drop it on your PATH:
 
 ```bash
-curl -sSfL https://raw.githubusercontent.com/maestropandy/rust-buildout-releaser/main/scripts/install.sh | sudo sh
+curl -sSfL https://raw.githubusercontent.com/duchenean/rust-buildout-releaser/main/scripts/install.sh | sudo sh
 # or
-wget -qO- https://raw.githubusercontent.com/maestropandy/rust-buildout-releaser/main/scripts/install.sh | sudo sh
+wget -qO- https://raw.githubusercontent.com/duchenean/rust-buildout-releaser/main/scripts/install.sh | sudo sh
 ```
 
 You can override the install directory (`BLDR_INSTALL_DIR`), target repo (`BLDR_REPO`), or pin a release (`BLDR_VERSION=v0.1.0`).
