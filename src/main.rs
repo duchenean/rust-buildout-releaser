@@ -219,7 +219,7 @@ async fn rebuild_changelog_from_tags(
     }
 
     let collector = ChangelogCollector::with_config(&config.changelog);
-    let mut combined_output = String::new();
+    let mut rendered_entries = Vec::new();
 
     for window in snapshots.windows(2).zip(version_tags.windows(2)) {
         let (versions_pair, tag_pair) = window;
@@ -279,17 +279,15 @@ async fn rebuild_changelog_from_tags(
             &config.changelog,
         );
 
-        combined_output.push_str(&consolidated.render(format));
-
-        if !combined_output.ends_with("\n\n") {
-            combined_output.push_str("\n\n");
-        }
+        rendered_entries.push(consolidated.render(format));
     }
 
-    if combined_output.is_empty() {
+    if rendered_entries.is_empty() {
         println!("{}", "No changelog entries generated from tags.".yellow());
         return Ok(());
     }
+
+    let combined_output = combine_rendered_changelog_entries(rendered_entries);
 
     match output_file {
         Some(path) => {
@@ -303,6 +301,49 @@ async fn rebuild_changelog_from_tags(
     }
 
     Ok(())
+}
+
+fn combine_rendered_changelog_entries(entries: Vec<String>) -> String {
+    entries
+        .into_iter()
+        .rev()
+        .map(|entry| entry.trim_end().to_string())
+        .collect::<Vec<_>>()
+        .join("\n\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::combine_rendered_changelog_entries;
+
+    #[test]
+    fn combines_entries_with_newest_first() {
+        let entries = vec![
+            "## 1.0.0\n\n- Initial release\n".to_string(),
+            "## 1.1.0\n\n- Bug fixes\n".to_string(),
+        ];
+
+        let combined = combine_rendered_changelog_entries(entries);
+
+        assert!(combined.starts_with("## 1.1.0"));
+        assert!(combined.contains("## 1.0.0"));
+        assert!(combined.find("## 1.1.0").unwrap() < combined.find("## 1.0.0").unwrap());
+    }
+
+    #[test]
+    fn trims_trailing_whitespace_when_combining() {
+        let entries = vec![
+            "## 2.0.0\n\n- Major updates\n\n".to_string(),
+            "## 2.1.0\n\n- Improvements\n\n\n".to_string(),
+        ];
+
+        let combined = combine_rendered_changelog_entries(entries);
+
+        assert_eq!(
+            combined,
+            "## 2.1.0\n\n- Improvements\n\n## 2.0.0\n\n- Major updates"
+        );
+    }
 }
 
 async fn cmd_check(
