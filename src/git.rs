@@ -139,6 +139,16 @@ impl GitOps {
         Ok(version_tags)
     }
 
+    /// Show the contents of a file at a given git reference
+    pub fn show_file_at_ref(&self, reference: &str, path: &str) -> Result<String> {
+        self.run_git(&["show", &format!("{}:{}", reference, path)])
+    }
+
+    /// Get the date of a tag in %Y-%m-%d format
+    pub fn tag_date(&self, tag: &str) -> Result<String> {
+        self.run_git(&["log", "-1", "--format=%cs", tag])
+    }
+
     /// Get the latest version from git tags
     pub fn get_latest_version(&self, prefix: &str) -> Result<Option<crate::version::Version>> {
         let version_tags = self.get_version_tags(prefix)?;

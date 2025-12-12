@@ -16,7 +16,7 @@ use std::time::Duration;
 use buildout::{BuildoutVersions, VersionUpdate};
 use changelog::{ChangelogCollector, ConsolidatedChangelog};
 use cli::{Cli, CliChangelogFormat, Commands};
-use config::{Config, PackageConfig};
+use config::{ChangelogFormat, Config, PackageConfig};
 use error::{ReleaserError, Result};
 use git::{GitHubOps, GitOps};
 use pypi::PyPiClient;
@@ -121,6 +121,7 @@ async fn run() -> Result<()> {
             output,
             stdout,
             release_version,
+            rebuild,
         } => {
             cmd_changelog(
                 &cli.config,
@@ -129,6 +130,7 @@ async fn run() -> Result<()> {
                 output,
                 stdout,
                 release_version,
+                rebuild,
                 cli.verbose,
             )
             .await
@@ -171,6 +173,134 @@ fn cmd_init(config_path: &str, force: bool) -> Result<()> {
     Config::create_default(path)?;
     println!("{} Created config file: {}", "✓".green(), config_path);
     println!("  Edit this file to configure your packages and settings.");
+
+    Ok(())
+}
+
+async fn rebuild_changelog_from_tags(
+    config: &Config,
+    packages_to_check: &[PackageConfig],
+    format: ChangelogFormat,
+    output_file: Option<String>,
+    verbose: bool,
+) -> Result<()> {
+    let git = GitOps::new();
+
+    if !git.is_repo() {
+        return Err(ReleaserError::GitError(
+            "Rebuild requires running inside a git repository".to_string(),
+        ));
+    }
+
+    let mut version_tags = git.get_version_tags(&config.github.tag_prefix)?;
+
+    if version_tags.len() < 2 {
+        return Err(ReleaserError::GitError(
+            "Need at least two version tags to rebuild changelog".to_string(),
+        ));
+    }
+
+    // Sort ascending (oldest first) for a full rebuild
+    version_tags.reverse();
+
+    let versions_file = &config.versions_file;
+    let mut snapshots = Vec::new();
+
+    for (tag, _) in &version_tags {
+        if verbose {
+            println!("Loading versions from tag {}...", tag);
+        }
+
+        let content = git.show_file_at_ref(tag, versions_file)?;
+        snapshots.push(BuildoutVersions::from_content(
+            content,
+            format!("{}@{}", versions_file, tag),
+        )?);
+    }
+
+    let collector = ChangelogCollector::with_config(&config.changelog);
+    let mut combined_output = String::new();
+
+    for window in snapshots.windows(2).zip(version_tags.windows(2)) {
+        let (versions_pair, tag_pair) = window;
+        let previous = &versions_pair[0];
+        let current = &versions_pair[1];
+
+        let current_tag = &tag_pair[1].0;
+        let release_version = if config.github.tag_prefix.is_empty() {
+            current_tag.clone()
+        } else {
+            current_tag
+                .strip_prefix(&config.github.tag_prefix)
+                .unwrap_or(current_tag)
+                .to_string()
+        };
+
+        let mut updates = Vec::new();
+
+        for pkg in packages_to_check {
+            let name = pkg.buildout_name();
+            let old_version = previous.get_version(name);
+            let new_version = current.get_version(name);
+
+            if let (Some(old_version), Some(new_version)) = (old_version, new_version) {
+                if old_version != new_version {
+                    updates.push(VersionUpdate {
+                        package_name: name.to_string(),
+                        old_version: old_version.to_string(),
+                        new_version: new_version.to_string(),
+                    });
+                }
+            }
+        }
+
+        if updates.is_empty() {
+            continue;
+        }
+
+        if verbose {
+            println!(
+                "Generating changelog for {} ({} updates)...",
+                current_tag,
+                updates.len()
+            );
+        }
+
+        let changelogs = collector
+            .collect_changelogs(&updates, &config.packages)
+            .await?;
+
+        let date = git.tag_date(current_tag).unwrap_or_else(|_| current_date());
+
+        let consolidated = ConsolidatedChangelog::with_templates(
+            &release_version,
+            &date,
+            changelogs,
+            &config.changelog,
+        );
+
+        combined_output.push_str(&consolidated.render(format));
+
+        if !combined_output.ends_with("\n\n") {
+            combined_output.push_str("\n\n");
+        }
+    }
+
+    if combined_output.is_empty() {
+        println!("{}", "No changelog entries generated from tags.".yellow());
+        return Ok(());
+    }
+
+    match output_file {
+        Some(path) => {
+            std::fs::write(&path, combined_output.trim_end())?;
+            println!("\n{} Rebuilt changelog saved to: {}", "✓".green(), path);
+        }
+        None => {
+            println!("\n{}", "═".repeat(60));
+            println!("{}", combined_output.trim_end());
+        }
+    }
 
     Ok(())
 }
@@ -755,11 +885,10 @@ async fn cmd_changelog(
     output_file_override: Option<String>,
     force_stdout: bool,
     release_version: Option<String>,
+    rebuild: bool,
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
-    let pypi = PyPiClient::new()?;
-    let buildout = BuildoutVersions::load(&config.versions_file)?;
 
     let format = format_override
         .map(|f| f.into())
@@ -772,6 +901,20 @@ async fn cmd_changelog(
     };
 
     let packages_to_check = filter_packages(&config.packages, packages_filter.as_deref());
+
+    if rebuild {
+        return rebuild_changelog_from_tags(
+            &config,
+            &packages_to_check,
+            format,
+            output_file,
+            verbose,
+        )
+        .await;
+    }
+
+    let pypi = PyPiClient::new()?;
+    let buildout = BuildoutVersions::load(&config.versions_file)?;
 
     println!("{}", "Checking for updates...".cyan());
 
