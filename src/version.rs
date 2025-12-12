@@ -268,11 +268,10 @@ impl Version {
     pub fn parse(s: &str) -> Result<Self> {
         let normalized = s.trim().trim_start_matches('v');
 
-        let parsed = semver::Version::parse(normalized)
-            .or_else(|_| {
-                python::parse_python_version(normalized)
-                    .ok_or_else(|| ReleaserError::VersionError(normalized.to_string()))
-            })?;
+        let parsed = semver::Version::parse(normalized).or_else(|_| {
+            python::parse_python_version(normalized)
+                .ok_or_else(|| ReleaserError::VersionError(normalized.to_string()))
+        })?;
 
         Ok(Self { inner: parsed })
     }
@@ -387,13 +386,16 @@ mod python_tests {
         let v = parse_python_version("4.2.3.1").expect("should parse four-segment release");
         assert_eq!(v.to_string(), "4.2.3+1");
 
-        let v = parse_python_version("4.2.3.1rc1").expect("should parse four-segment rc prerelease");
+        let v =
+            parse_python_version("4.2.3.1rc1").expect("should parse four-segment rc prerelease");
         assert_eq!(v.to_string(), "4.2.3-rc.1+1");
 
-        let v = parse_python_version("4.2.3.28b3").expect("should parse four-segment beta prerelease");
+        let v =
+            parse_python_version("4.2.3.28b3").expect("should parse four-segment beta prerelease");
         assert_eq!(v.to_string(), "4.2.3-beta.3+28");
 
-        let v = parse_python_version("4.2.4.8a2").expect("should parse four-segment alpha prerelease");
+        let v =
+            parse_python_version("4.2.4.8a2").expect("should parse four-segment alpha prerelease");
         assert_eq!(v.to_string(), "4.2.4-alpha.2+8");
 
         let v = parse_python_version("2.5").expect("should parse two-segment release");

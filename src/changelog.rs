@@ -1,9 +1,9 @@
-use regex::Regex;
-use reqwest::Client;
-use std::path::Path;
 use crate::buildout::VersionUpdate;
 use crate::config::{ChangelogConfig, ChangelogFormat, PackageConfig};
 use crate::error::{ReleaserError, Result};
+use regex::Regex;
+use reqwest::Client;
+use std::path::Path;
 
 const USER_AGENT: &str = concat!("bldr/", env!("CARGO_PKG_VERSION"));
 
@@ -151,7 +151,9 @@ impl ChangelogCollector {
             || lower.contains("changes")
             || lower.contains("history")
             || lower.contains("release notes")
-            || Regex::new(r"(?i)##?\s*\[?\d+\.\d+").unwrap().is_match(content)
+            || Regex::new(r"(?i)##?\s*\[?\d+\.\d+")
+                .unwrap()
+                .is_match(content)
     }
 
     /// Fetch content from a URL
@@ -227,9 +229,10 @@ impl ChangelogCollector {
         old_version: &str,
         new_version: &str,
     ) -> Option<Vec<ChangelogEntry>> {
-        let header_pattern =
-            Regex::new(r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*[-–—]\s*(.+))?$")
-                .ok()?;
+        let header_pattern = Regex::new(
+            r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*[-–—]\s*(.+))?$",
+        )
+        .ok()?;
 
         let mut entries = Vec::new();
         let mut capture_content = false;
@@ -293,8 +296,7 @@ impl ChangelogCollector {
         new_version: &str,
     ) -> Option<Vec<ChangelogEntry>> {
         let header_pattern =
-            Regex::new(r"(?m)^v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\s*(?:\(([^)]+)\))?\s*$")
-                .ok()?;
+            Regex::new(r"(?m)^v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\s*(?:\(([^)]+)\))?\s*$").ok()?;
         let underline_pattern = Regex::new(r"^[-=~^]+$").ok()?;
 
         let lines: Vec<&str> = content.lines().collect();
@@ -376,7 +378,7 @@ impl ChangelogCollector {
         let header_pattern = Regex::new(
             r"(?m)^(?:\*\s+|Version\s+|v)?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)(?:\s*[-:]\s*(.+))?$",
         )
-            .ok()?;
+        .ok()?;
 
         let mut entries = Vec::new();
         let mut capture_content = false;
@@ -685,7 +687,11 @@ impl ConsolidatedChangelog {
     }
 
     /// Prepend new changelog entry to existing content
-    fn prepend_to_changelog(new_content: &str, existing_content: &str, format: ChangelogFormat) -> String {
+    fn prepend_to_changelog(
+        new_content: &str,
+        existing_content: &str,
+        format: ChangelogFormat,
+    ) -> String {
         match format {
             ChangelogFormat::Markdown => {
                 // Check if file has a main title (# Changelog or similar)
@@ -718,7 +724,10 @@ impl ConsolidatedChangelog {
                     }
 
                     // Found first release entry or other content
-                    if found_main_title || trimmed.starts_with("## ") || trimmed.starts_with("# Release") {
+                    if found_main_title
+                        || trimmed.starts_with("## ")
+                        || trimmed.starts_with("# Release")
+                    {
                         break;
                     }
 
@@ -813,7 +822,12 @@ impl ConsolidatedChangelog {
             }
             ChangelogFormat::Text => {
                 // For plain text, just prepend with a separator
-                format!("{}\n{}\n{}", new_content.trim(), "=".repeat(60), existing_content)
+                format!(
+                    "{}\n{}\n{}",
+                    new_content.trim(),
+                    "=".repeat(60),
+                    existing_content
+                )
             }
         }
     }
@@ -826,19 +840,10 @@ impl ConsolidatedChangelog {
             }
             ChangelogFormat::Rst => {
                 let title = "Changelog";
-                format!(
-                    "{}\n{}\n\n{}",
-                    title,
-                    "=".repeat(title.len()),
-                    content
-                )
+                format!("{}\n{}\n\n{}", title, "=".repeat(title.len()), content)
             }
             ChangelogFormat::Text => {
-                format!(
-                    "CHANGELOG\n{}\n\n{}",
-                    "=".repeat(60),
-                    content
-                )
+                format!("CHANGELOG\n{}\n\n{}", "=".repeat(60), content)
             }
         }
     }
@@ -955,7 +960,9 @@ mod tests {
 
         // New entry should be after the header but before the old release
         assert!(result.contains("# Changelog"));
-        assert!(result.find("## Release 1.1.0").unwrap() < result.find("## Release 1.0.0").unwrap());
+        assert!(
+            result.find("## Release 1.1.0").unwrap() < result.find("## Release 1.0.0").unwrap()
+        );
     }
 
     #[test]

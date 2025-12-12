@@ -190,6 +190,10 @@ pub enum Commands {
         /// Release version for the changelog header
         #[arg(long)]
         release_version: Option<String>,
+
+        /// Rebuild the changelog from the first tag to the latest
+        #[arg(long)]
+        rebuild: bool,
     },
 
     /// Show or bump version

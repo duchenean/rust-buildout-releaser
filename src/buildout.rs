@@ -1,7 +1,7 @@
+use crate::error::{ReleaserError, Result};
 use regex::Regex;
 use std::collections::HashMap;
 use std::path::Path;
-use crate::error::{ReleaserError, Result};
 
 #[derive(Debug, Clone)]
 pub struct BuildoutVersions {
@@ -32,6 +32,17 @@ impl BuildoutVersions {
             content,
             versions,
             path: path_str,
+        })
+    }
+
+    /// Build a versions snapshot from raw content
+    pub fn from_content<S: Into<String>>(content: String, path: S) -> Result<Self> {
+        let versions = Self::parse_versions(&content)?;
+
+        Ok(Self {
+            content,
+            versions,
+            path: path.into(),
         })
     }
 
@@ -81,11 +92,17 @@ impl BuildoutVersions {
 
     /// Get all tracked packages and their versions
     pub fn get_all_versions(&self) -> impl Iterator<Item = (&str, &str)> {
-        self.versions.iter().map(|(k, (v, _))| (k.as_str(), v.as_str()))
+        self.versions
+            .iter()
+            .map(|(k, (v, _))| (k.as_str(), v.as_str()))
     }
 
     /// Update a package version and return the update info
-    pub fn update_version(&mut self, package_name: &str, new_version: &str) -> Result<Option<VersionUpdate>> {
+    pub fn update_version(
+        &mut self,
+        package_name: &str,
+        new_version: &str,
+    ) -> Result<Option<VersionUpdate>> {
         let old_version = match self.versions.get(package_name) {
             Some((v, _)) => v.clone(),
             None => return Ok(None), // Package not in file
@@ -101,10 +118,12 @@ impl BuildoutVersions {
             regex::escape(package_name),
             regex::escape(&old_version)
         );
-        let re = Regex::new(&pattern)
-            .map_err(|e| ReleaserError::BuildoutParseError(e.to_string()))?;
+        let re =
+            Regex::new(&pattern).map_err(|e| ReleaserError::BuildoutParseError(e.to_string()))?;
 
-        self.content = re.replace(&self.content, format!("${{1}}{}${{2}}", new_version)).to_string();
+        self.content = re
+            .replace(&self.content, format!("${{1}}{}${{2}}", new_version))
+            .to_string();
 
         // Update internal tracking
         if let Some((v, line)) = self.versions.get_mut(package_name) {
@@ -143,12 +162,13 @@ impl BuildoutVersions {
             let new_line = format!("{} = {}\n", package_name, version);
             self.content.insert_str(insert_pos, &new_line);
 
-            self.versions.insert(package_name.to_string(), (version.to_string(), 0));
+            self.versions
+                .insert(package_name.to_string(), (version.to_string(), 0));
 
             Ok(true)
         } else {
             Err(ReleaserError::BuildoutParseError(
-                "Could not find [versions] section".to_string()
+                "Could not find [versions] section".to_string(),
             ))
         }
     }
@@ -193,8 +213,14 @@ six = 1.16.0
 
         let versions = BuildoutVersions::parse_versions(content).unwrap();
 
-        assert_eq!(versions.get("zope.interface").map(|(v, _)| v.as_str()), Some("5.4.0"));
-        assert_eq!(versions.get("plone.api").map(|(v, _)| v.as_str()), Some("2.0.0"));
+        assert_eq!(
+            versions.get("zope.interface").map(|(v, _)| v.as_str()),
+            Some("5.4.0")
+        );
+        assert_eq!(
+            versions.get("plone.api").map(|(v, _)| v.as_str()),
+            Some("2.0.0")
+        );
         assert_eq!(versions.get("six").map(|(v, _)| v.as_str()), Some("1.16.0"));
     }
 }

@@ -1,7 +1,7 @@
+use crate::error::{ReleaserError, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::Path;
-use crate::error::{ReleaserError, Result};
 
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
@@ -322,8 +322,9 @@ impl Config {
     }
 
     pub fn save<P: AsRef<Path>>(&self, path: P) -> Result<()> {
-        let content = toml::to_string_pretty(self)
-            .map_err(|e| ReleaserError::ConfigError(format!("Failed to serialize config: {}", e)))?;
+        let content = toml::to_string_pretty(self).map_err(|e| {
+            ReleaserError::ConfigError(format!("Failed to serialize config: {}", e))
+        })?;
 
         std::fs::write(path.as_ref(), content)?;
         Ok(())
