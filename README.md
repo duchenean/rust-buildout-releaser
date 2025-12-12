@@ -65,10 +65,25 @@ The default configuration points to a buildout `versions.cfg`, but you can pass 
 - `update` – write the newest versions into your buildout file; use `--yes` to skip prompts or `--dry-run` to preview.
 - `release` – tag and commit a release with optional bumping (`--bump`), custom messages, and push/GitHub toggles.
 - `update-release` – combine update + release in one shot; supports changelog collection (`--changelog` / `--no-changelog`), formats, draft releases, dry runs, and metadata updates.
-- `changelog` – collect package changelogs in markdown/RST/text and write to stdout or a file (add `--stdout` to ignore configured files).
+- `changelog` – collect package changelogs in markdown/RST/text and write to stdout or a file (add `--stdout` to ignore configured files). Use `--rebuild` to regenerate the changelog across all git tags, starting from the first tagged buildout snapshot through the latest.
 - `version` – display the current or bumped version; `--list-levels` shows available bump keywords.
 - `info` – fetch PyPI metadata for a package; add `--versions` to list all releases.
 - `completions` – generate shell completion scripts (see below).
+
+### Rebuilding the changelog
+
+Use the `--rebuild` flag to regenerate the changelog from scratch, using every git tag as a checkpoint. This walks tags in chronological order, loads each tagged buildout snapshot, and recomputes package updates so you can produce a clean, consolidated history even if previous changelog runs were skipped.
+
+```bash
+# Rebuild markdown changelog entries and write to stdout
+bldr changelog --rebuild
+
+# Rebuild and save to a file (overrides configured output)
+bldr changelog --rebuild --output CHANGELOG.md
+
+# Pair with a specific release version header if desired
+bldr changelog --rebuild --release-version v1.4.0
+```
 
 ## Configuration highlights (`bldr.toml`)
 
@@ -108,5 +123,6 @@ Re-run the relevant command whenever the CLI changes to keep completion scripts 
 - Use `--dry-run` when you want a preview without touching files.
 - Pair `--no-github` or `--no-push` with `release`/`update-release` when testing locally.
 - Customize changelog templates to match your team’s release notes style.
+- Rebuild changelog history with `bldr changelog --rebuild` to walk every git tag in order and consolidate package changes from the first release through the latest.
 
 Now go ship something great—bldr’s got your back.
