@@ -1324,9 +1324,11 @@ fn create_progress_bar(len: usize, message: &str) -> Option<ProgressBar> {
 
     let pb = ProgressBar::new(len as u64);
     pb.set_style(
-        ProgressStyle::with_template(" {spinner:.cyan} {msg} [{bar:40.cyan/blue}] {pos}/{len}")
-            .expect("progress template should be valid")
-            .progress_chars("=>-"),
+        ProgressStyle::with_template(
+            " {msg}\n {spinner:.cyan} [{bar:40.cyan/blue}] {pos}/{len}",
+        )
+        .expect("progress template should be valid")
+        .progress_chars("=>-"),
     );
     pb.set_message(message.to_string());
     pb.enable_steady_tick(Duration::from_millis(120));
