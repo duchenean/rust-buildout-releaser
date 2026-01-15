@@ -1,9 +1,9 @@
 [package]
 name = "rust-buildout-releaser"
-version = "0.1.0"
-edition = "2021"
+version = "0.2.0"
+edition = "2025"
 description = "A zc.buildout package releaser tool"
-authors = ["Your Name <your.email@example.com>"]
+authors = ["Antoine Duchêne <adu@imio.be>"]
 
 [[bin]]
 name = "bldr"

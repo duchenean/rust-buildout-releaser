@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO="${BLDR_REPO:-maestropandy/rust-buildout-releaser}"
+REPO="${BLDR_REPO:-duchenean/rust-buildout-releaser}"
 INSTALL_DIR="${BLDR_INSTALL_DIR:-/usr/local/bin}"
 VERSION="${BLDR_VERSION:-latest}"
 
