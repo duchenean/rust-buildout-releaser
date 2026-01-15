@@ -47,12 +47,16 @@ async fn run() -> Result<()> {
             packages,
             yes,
             dry_run,
+            commit,
+            push,
         } => {
             cmd_update(
                 &cli.config,
                 packages,
                 yes,
                 dry_run,
+                commit,
+                push,
                 cli.non_interactive,
                 cli.verbose,
             )
@@ -421,11 +425,50 @@ async fn cmd_update(
     packages_filter: Option<String>,
     auto_confirm: bool,
     dry_run: bool,
+    commit: bool,
+    push: bool,
     non_interactive: bool,
     verbose: bool,
 ) -> Result<()> {
     let config = Config::load(config_path)?;
-    perform_update(
+
+    let commit = commit || push;
+    let git = GitOps::new();
+
+    if commit {
+        if !git.is_repo() {
+            return Err(ReleaserError::GitError(
+                "Not in a git repository".to_string(),
+            ));
+        }
+
+        if !git.is_clean()? {
+            if non_interactive {
+                return Err(ReleaserError::GitError(
+                    "Uncommitted changes detected. Clean your workspace or rerun without --non-interactive.".to_string(),
+                ));
+            }
+
+            println!("{}", "Warning: You have uncommitted changes.".yellow());
+            let proceed = Confirm::new()
+                .with_prompt("Do you want to continue? (changes will be included in the commit)")
+                .default(false)
+                .interact()
+                .map_err(|e| {
+                    ReleaserError::IoError(std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        e.to_string(),
+                    ))
+                })?;
+
+            if !proceed {
+                println!("Aborted.");
+                return Ok(());
+            }
+        }
+    }
+
+    let updates = perform_update(
         &config,
         packages_filter,
         auto_confirm || non_interactive,
@@ -433,6 +476,37 @@ async fn cmd_update(
         verbose,
     )
     .await?;
+
+    if updates.is_empty() {
+        return Ok(());
+    }
+
+    if dry_run {
+        if commit {
+            println!("{}", "Dry run: skipping commit/push actions.".yellow());
+        }
+        return Ok(());
+    }
+
+    if commit {
+        let commit_message =
+            generate_commit_message(&updates, config.git.effective_commit_template(), None);
+        if verbose {
+            println!("Commit message: {}", commit_message);
+        }
+
+        git.add(&config.versions_file)?;
+        println!("{} Staged {}", "✓".green(), config.versions_file);
+
+        git.commit(&commit_message)?;
+        println!("{} Committed changes", "✓".green());
+
+        if push {
+            git.push(false)?;
+            println!("{} Pushed to remote", "✓".green());
+        }
+    }
+
     Ok(())
 }
 

@@ -77,6 +77,14 @@ pub enum Commands {
         /// Dry run - don't actually modify files
         #[arg(short = 'n', long)]
         dry_run: bool,
+
+        /// Create a commit after updating
+        #[arg(short = 'c', long)]
+        commit: bool,
+
+        /// Push the commit to the remote
+        #[arg(short = 'p', long)]
+        push: bool,
     },
 
     /// Create a release (commit, tag, and optionally push)
