@@ -1,7 +1,7 @@
 [package]
 name = "rust-buildout-releaser"
 version = "0.2.0"
-edition = "2025"
+edition = "2021"
 description = "A zc.buildout package releaser tool"
 authors = ["Antoine Duchêne <adu@imio.be>"]
 
