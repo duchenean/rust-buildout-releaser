@@ -40,6 +40,7 @@ pub struct VersionInfo {
     pub is_prerelease: bool,
 }
 
+#[derive(Clone)]
 pub struct PyPiClient {
     client: reqwest::Client,
     base_url: String,

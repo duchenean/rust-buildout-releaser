@@ -11,7 +11,10 @@ use clap::{CommandFactory, Parser};
 use colored::*;
 use dialoguer::{Confirm, MultiSelect};
 use indicatif::{ProgressBar, ProgressStyle};
+use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Semaphore;
+use tokio::task::JoinSet;
 
 use buildout::{BuildoutVersions, VersionUpdate};
 use changelog::{ChangelogCollector, ConsolidatedChangelog};
@@ -19,7 +22,7 @@ use cli::{Cli, CliChangelogFormat, Commands};
 use config::{ChangelogFormat, Config, PackageConfig};
 use error::{ReleaserError, Result};
 use git::{GitHubOps, GitOps};
-use pypi::PyPiClient;
+use pypi::{PyPiClient, VersionInfo};
 use version::{MetadataUpdater, Version, VersionManager};
 
 #[tokio::main]
@@ -368,29 +371,12 @@ async fn cmd_check(
         None
     };
 
+    let latest_versions =
+        fetch_latest_versions(&pypi, &packages_to_check, progress.clone(), verbose).await?;
+
     let mut updates = Vec::new();
 
-    for pkg_config in &packages_to_check {
-        if let Some(pb) = progress.as_ref() {
-            pb.set_message(format!("Checking {}...", pkg_config.name));
-            if verbose {
-                pb.println(format!("Checking {}...", pkg_config.name));
-            }
-        } else if verbose {
-            println!("Checking {}...", pkg_config.name);
-        }
-
-        let latest = match &pkg_config.version_constraint {
-            Some(constraint) => {
-                pypi.get_matching_version(&pkg_config.name, constraint, pkg_config.allow_prerelease)
-                    .await?
-            }
-            None => {
-                pypi.get_latest_version(&pkg_config.name, pkg_config.allow_prerelease)
-                    .await?
-            }
-        };
-
+    for (pkg_config, latest) in packages_to_check.iter().zip(latest_versions) {
         let current = buildout.get_version(pkg_config.buildout_name());
         let has_update = current.map_or(true, |c| c != latest.version);
 
@@ -401,10 +387,6 @@ async fn cmd_check(
             latest_version: latest.version,
             has_update,
         });
-
-        if let Some(pb) = progress.as_ref() {
-            pb.inc(1);
-        }
     }
 
     if let Some(pb) = progress {
@@ -1033,24 +1015,12 @@ async fn cmd_changelog(
 
     println!("{}", "Checking for updates...".cyan());
 
+    let latest_versions =
+        fetch_latest_versions(&pypi, &packages_to_check, None, verbose).await?;
+
     let mut updates = Vec::new();
 
-    for pkg_config in &packages_to_check {
-        if verbose {
-            println!("  Checking {}...", pkg_config.name);
-        }
-
-        let latest = match &pkg_config.version_constraint {
-            Some(constraint) => {
-                pypi.get_matching_version(&pkg_config.name, constraint, pkg_config.allow_prerelease)
-                    .await?
-            }
-            None => {
-                pypi.get_latest_version(&pkg_config.name, pkg_config.allow_prerelease)
-                    .await?
-            }
-        };
-
+    for (pkg_config, latest) in packages_to_check.iter().zip(latest_versions) {
         let current = buildout.get_version(pkg_config.buildout_name());
 
         if let Some(current_version) = current {
@@ -1348,6 +1318,96 @@ fn create_spinner(message: &str) -> ProgressBar {
     pb
 }
 
+fn pypi_concurrency_limit() -> usize {
+    std::thread::available_parallelism()
+        .map(|count| (count.get() * 4).clamp(4, 32))
+        .unwrap_or(8)
+}
+
+async fn fetch_latest_versions(
+    pypi: &PyPiClient,
+    packages: &[PackageConfig],
+    progress: Option<ProgressBar>,
+    verbose: bool,
+) -> Result<Vec<VersionInfo>> {
+    if packages.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let concurrency = pypi_concurrency_limit().min(packages.len());
+    let semaphore = Arc::new(Semaphore::new(concurrency));
+    let mut join_set = JoinSet::new();
+
+    for (index, pkg_config) in packages.iter().cloned().enumerate() {
+        let pypi = pypi.clone();
+        let progress = progress.clone();
+        let permit = semaphore.clone().acquire_owned().await.map_err(|_| {
+            ReleaserError::PyPiError("Failed to acquire PyPI concurrency permit".to_string())
+        })?;
+
+        join_set.spawn(async move {
+            let _permit = permit;
+
+            if let Some(pb) = progress.as_ref() {
+                pb.set_message(format!("Checking {}...", pkg_config.name));
+                if verbose {
+                    pb.println(format!("Checking {}...", pkg_config.name));
+                }
+            } else if verbose {
+                println!("Checking {}...", pkg_config.name);
+            }
+
+            let latest = match &pkg_config.version_constraint {
+                Some(constraint) => {
+                    pypi.get_matching_version(
+                        &pkg_config.name,
+                        constraint,
+                        pkg_config.allow_prerelease,
+                    )
+                    .await?
+                }
+                None => {
+                    pypi.get_latest_version(&pkg_config.name, pkg_config.allow_prerelease)
+                        .await?
+                }
+            };
+
+            if let Some(pb) = progress {
+                pb.inc(1);
+            }
+
+            Ok::<(usize, VersionInfo), ReleaserError>((index, latest))
+        });
+    }
+
+    let mut results = vec![None; packages.len()];
+
+    while let Some(joined) = join_set.join_next().await {
+        match joined {
+            Ok(Ok((index, latest))) => {
+                results[index] = Some(latest);
+            }
+            Ok(Err(err)) => return Err(err),
+            Err(err) => {
+                return Err(ReleaserError::PyPiError(format!(
+                    "Failed to join PyPI request task: {}",
+                    err
+                )))
+            }
+        }
+    }
+
+    results
+        .into_iter()
+        .enumerate()
+        .map(|(index, latest)| {
+            latest.ok_or_else(|| {
+                ReleaserError::PyPiError(format!("Missing PyPI result for index {}", index))
+            })
+        })
+        .collect()
+}
+
 async fn perform_update(
     config: &Config,
     packages_filter: Option<String>,
@@ -1366,27 +1426,10 @@ async fn perform_update(
 
     let progress = create_progress_bar(packages_to_check.len(), "Checking packages");
 
-    for pkg_config in &packages_to_check {
-        if let Some(pb) = progress.as_ref() {
-            pb.set_message(format!("Checking {}...", pkg_config.name));
-            if verbose {
-                pb.println(format!("Checking {}...", pkg_config.name));
-            }
-        } else if verbose {
-            println!("  Checking {}...", pkg_config.name);
-        }
+    let latest_versions =
+        fetch_latest_versions(&pypi, &packages_to_check, progress.clone(), verbose).await?;
 
-        let latest = match &pkg_config.version_constraint {
-            Some(constraint) => {
-                pypi.get_matching_version(&pkg_config.name, constraint, pkg_config.allow_prerelease)
-                    .await?
-            }
-            None => {
-                pypi.get_latest_version(&pkg_config.name, pkg_config.allow_prerelease)
-                    .await?
-            }
-        };
-
+    for (pkg_config, latest) in packages_to_check.iter().zip(latest_versions) {
         let current = buildout.get_version(pkg_config.buildout_name());
 
         if let Some(current_version) = current {
@@ -1397,10 +1440,6 @@ async fn perform_update(
                     latest.version,
                 ));
             }
-        }
-
-        if let Some(pb) = progress.as_ref() {
-            pb.inc(1);
         }
     }
 
