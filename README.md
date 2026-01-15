@@ -18,7 +18,11 @@ Use the install helper to grab the latest release for your CPU (x86_64 or aarch6
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/duchenean/rust-buildout-releaser/main/scripts/install.sh | sudo sh
-# or
+```
+
+or
+
+```bash
 wget -qO- https://raw.githubusercontent.com/duchenean/rust-buildout-releaser/main/scripts/install.sh | sudo sh
 ```
 
