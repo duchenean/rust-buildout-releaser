@@ -105,6 +105,10 @@ jobs:
           import re
           path = "Cargo.toml"
           version = os.environ["VERSION"]
+          match = re.match(r"^(\d+\.\d+\.\d+)([a-zA-Z]+)(\d+)$", version)
+          if match:
+            base, prerelease, number = match.groups()
+            version = f"{base}-{prerelease.lower()}.{number}"
           with open(path, "r", encoding="utf-8") as f:
             data = f.read()
           updated, count = re.subn(r'(?m)^version = ".*"$', f'version = "{version}"', data, count=1)
