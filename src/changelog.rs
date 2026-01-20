@@ -69,14 +69,29 @@ impl ChangelogCollector {
         let raw_content = if let Some(url) = custom_url {
             self.fetch_url_content(url).await.ok().flatten()
         } else {
-            self.try_fetch_from_pypi(package_name).await.ok().flatten()
+            self.try_fetch_from_pypi(package_name)
+                .await
+                .ok()
+                .flatten()
         };
 
-        let entries = if let Some(ref content) = raw_content {
+        let mut entries = if let Some(ref content) = raw_content {
             self.parse_changelog(content, old_version, new_version)
         } else {
             Vec::new()
         };
+
+        if entries.is_empty() && custom_url.is_none() {
+            if let Ok(Some(content)) = self
+                .try_fetch_from_pypi_release(package_name, new_version)
+                .await
+            {
+                let fallback_entries = self.parse_changelog(&content, old_version, new_version);
+                if !fallback_entries.is_empty() {
+                    entries = fallback_entries;
+                }
+            }
+        }
 
         Ok(PackageChangelog {
             package_name: package_name.to_string(),
@@ -101,6 +116,33 @@ impl ChangelogCollector {
             ReleaserError::PyPiError(format!("Failed to parse PyPI response: {}", e))
         })?;
 
+        self.parse_pypi_payload(&data).await
+    }
+
+    async fn try_fetch_from_pypi_release(
+        &self,
+        package_name: &str,
+        version: &str,
+    ) -> Result<Option<String>> {
+        let url = format!("https://pypi.org/pypi/{}/{}/json", package_name, version);
+
+        let response = self.client.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+
+        let data: serde_json::Value = response.json().await.map_err(|e| {
+            ReleaserError::PyPiError(format!("Failed to parse PyPI response: {}", e))
+        })?;
+
+        self.parse_pypi_payload(&data).await
+    }
+
+    async fn parse_pypi_payload(
+        &self,
+        data: &serde_json::Value,
+    ) -> Result<Option<String>> {
         // Try to get changelog from description
         if let Some(description) = data["info"]["description"].as_str() {
             if Self::looks_like_changelog(description) {
