@@ -863,7 +863,7 @@ fn normalize_version(version: &str) -> Vec<u32> {
 
     for (i, part) in parts.iter().enumerate() {
         // For major, minor, patch we take leading digits
-        let mut digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
         if digits.is_empty() {
             break;
         }

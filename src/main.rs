@@ -1104,6 +1104,7 @@ fn cmd_add(
         buildout_name,
         allow_prerelease: false,
         changelog_url,
+        include_in_changelog: true,
     });
 
     config.save(config_path)?;
