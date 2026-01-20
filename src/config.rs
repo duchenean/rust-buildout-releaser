@@ -362,3 +362,45 @@ impl Config {
         Ok(config)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn test_load_config_include_in_changelog() {
+        let toml_content = r#"
+versions_file = "versions.cfg"
+
+[[packages]]
+name = "plonemeeting.portal.core"
+allow_prerelease = false
+include_in_changelog = true
+
+[[packages]]
+name = "plonetheme.deliberations"
+allow_prerelease = false
+include_in_changelog = false
+
+[[packages]]
+name = "collective.timestamp"
+allow_prerelease = false
+"#;
+        let timestamp = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("bldr-config-{}.toml", timestamp));
+
+        fs::write(&path, toml_content).expect("write temp config");
+        let config = Config::load(&path).expect("load config");
+        fs::remove_file(&path).ok();
+
+        assert_eq!(config.packages.len(), 3);
+        assert!(config.packages[0].include_in_changelog);
+        assert!(!config.packages[1].include_in_changelog);
+        assert!(config.packages[2].include_in_changelog);
+    }
+}
