@@ -1020,9 +1020,38 @@ mod tests {
     #[tokio::test]
     async fn test_parse_pypi_payload_uses_description_changelog() {
         let collector = ChangelogCollector::new();
+        let description = r#".. This README is meant for consumption by humans and pypi. Pypi can render rst files so please do not use Sphinx features.
+   If you want to learn more about writing documentation, please check out: http://docs.plone.org/about/documentation_styleguide.html
+   This text does not appear on pypi or github. It is a comment.
+
+.. image:: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml/badge.svg?branch=master
+    :target: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml
+
+plonemeeting.portal.core
+========================
+
+``plonemeeting.portal.core`` is a comprehensive package designed to facilitate public access
+to decisions and publications from local authorities. By leveraging this package, municipalities and other institutions
+can ensure transparency and foster public trust by making their decisions readily available to the public.
+
+Changelog
+=========
+
+2.2.6 (2025-12-11)
+------------------
+
+- Sort publications on effective date and sortable_title on faceted view.
+  [aduchene]
+
+2.2.5 (2025-10-24)
+------------------
+
+- Remove `x-twitter` in `site_socials` actions.
+  [aduchene]
+"#;
         let payload = json!({
             "info": {
-                "description": "Changelog\n=========\n\n2.2.6 (2025-12-11)\n------------------\n- Fix issue.\n",
+                "description": description,
                 "project_urls": {},
                 "home_page": null
             }
@@ -1030,7 +1059,40 @@ mod tests {
 
         let result = collector.parse_pypi_payload(&payload).await.unwrap();
 
-        assert!(result.is_some());
+        let content = result.expect("expected changelog content from description");
+        assert!(content.contains("Changelog"));
+        assert!(content.contains("2.2.6 (2025-12-11)"));
+    }
+
+    #[test]
+    fn test_parse_changelog_extracts_rst_entries_from_description() {
+        let collector = ChangelogCollector::new();
+        let description = r#"Changelog
+=========
+
+2.2.6 (2025-12-11)
+------------------
+
+- Sort publications on effective date and sortable_title on faceted view.
+  [aduchene]
+
+2.2.5 (2025-10-24)
+------------------
+
+- Remove `x-twitter` in `site_socials` actions.
+  [aduchene]
+"#;
+
+        let entries = collector.parse_changelog(description, "2.2.5", "2.2.6");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].version, "2.2.6");
+        assert_eq!(entries[0].date.as_deref(), Some("2025-12-11"));
+        assert!(
+            entries[0]
+                .content
+                .contains("Sort publications on effective date")
+        );
     }
 
     #[tokio::test]
