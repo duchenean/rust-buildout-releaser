@@ -92,7 +92,7 @@ bldr changelog --rebuild --release-version v1.4.0
 ## Configuration highlights (`bldr.toml`)
 
 - **versions_file** – the buildout versions file to rewrite (e.g., `versions.cfg`).
-- **packages** – objects with `name`, optional `version_constraint`, `buildout_name`, `allow_prerelease`, and `changelog_url`.
+- **packages** – objects with `name`, optional `version_constraint`, `buildout_name`, `allow_prerelease`, `changelog_url`, and `include_in_changelog` to skip consolidated notes.
 - **git** – target `branch`, `auto_push`, and a customizable `commit_template`.
 - **github** – `repository` slug, `create_release` toggle, and optional `tag_prefix` (like `v`).
 - **changelog** – enable collection by default, pick `format` (markdown/rst/text), choose an `output_file`, and control whether notes join the commit or GitHub release.

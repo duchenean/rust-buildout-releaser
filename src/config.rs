@@ -52,6 +52,10 @@ pub struct PackageConfig {
     /// Optional: custom changelog URL for this package
     #[serde(default)]
     pub changelog_url: Option<String>,
+
+    /// Whether to include this package in consolidated changelog output
+    #[serde(default = "default_true")]
+    pub include_in_changelog: bool,
 }
 
 impl PackageConfig {
@@ -339,6 +343,7 @@ impl Config {
                 buildout_name: None,
                 allow_prerelease: false,
                 changelog_url: None,
+                include_in_changelog: true,
             }],
             git: GitConfig::default(),
             github: GitHubConfig::default(),

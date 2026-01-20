@@ -453,10 +453,13 @@ impl ChangelogCollector {
 
         for update in updates {
             // Find the package config to get custom changelog URL
-            let custom_url = package_configs
+            let package_config = package_configs
                 .iter()
-                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name)
-                .and_then(|p| p.changelog_url.as_deref());
+                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name);
+            if matches!(package_config, Some(config) if !config.include_in_changelog) {
+                continue;
+            }
+            let custom_url = package_config.and_then(|p| p.changelog_url.as_deref());
 
             match self
                 .fetch_changelog(
