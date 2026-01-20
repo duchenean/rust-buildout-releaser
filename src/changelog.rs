@@ -958,6 +958,7 @@ fn compare_versions(a: &[u32], b: &[u32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
 
     #[test]
     fn test_normalize_version() {
@@ -1014,5 +1015,37 @@ mod tests {
 
         assert!(result.starts_with("# Changelog"));
         assert!(result.contains("## Release 1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_pypi_payload_uses_description_changelog() {
+        let collector = ChangelogCollector::new();
+        let payload = json!({
+            "info": {
+                "description": "Changelog\n=========\n\n2.2.6 (2025-12-11)\n------------------\n- Fix issue.\n",
+                "project_urls": {},
+                "home_page": null
+            }
+        });
+
+        let result = collector.parse_pypi_payload(&payload).await.unwrap();
+
+        assert!(result.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_parse_pypi_payload_returns_none_without_changelog() {
+        let collector = ChangelogCollector::new();
+        let payload = json!({
+            "info": {
+                "description": "Package summary without release notes.",
+                "project_urls": {},
+                "home_page": null
+            }
+        });
+
+        let result = collector.parse_pypi_payload(&payload).await.unwrap();
+
+        assert!(result.is_none());
     }
 }
