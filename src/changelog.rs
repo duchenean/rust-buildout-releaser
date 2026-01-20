@@ -919,6 +919,8 @@ fn compare_versions(a: &[u32], b: &[u32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::buildout::VersionUpdate;
+    use crate::config::PackageConfig;
 
     #[test]
     fn test_normalize_version() {
@@ -975,5 +977,30 @@ mod tests {
 
         assert!(result.starts_with("# Changelog"));
         assert!(result.contains("## Release 1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_changelogs_skips_excluded_packages() {
+        let collector = ChangelogCollector::new();
+        let updates = vec![VersionUpdate {
+            package_name: "example".to_string(),
+            old_version: "1.0.0".to_string(),
+            new_version: "1.1.0".to_string(),
+        }];
+        let packages = vec![PackageConfig {
+            name: "example".to_string(),
+            version_constraint: None,
+            buildout_name: None,
+            allow_prerelease: false,
+            changelog_url: None,
+            include_in_changelog: false,
+        }];
+
+        let changelogs = collector
+            .collect_changelogs(&updates, &packages)
+            .await
+            .expect("collect changelogs");
+
+        assert!(changelogs.is_empty());
     }
 }
