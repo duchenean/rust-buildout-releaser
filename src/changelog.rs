@@ -36,6 +36,7 @@ pub struct ChangelogCollector {
     client: Client,
     changelog_files: Vec<String>,
     github_branches: Vec<String>,
+    verbose: bool,
 }
 
 impl ChangelogCollector {
@@ -44,6 +45,10 @@ impl ChangelogCollector {
     }
 
     pub fn with_config(config: &ChangelogConfig) -> Self {
+        Self::with_config_verbose(config, false)
+    }
+
+    pub fn with_config_verbose(config: &ChangelogConfig, verbose: bool) -> Self {
         let mut github_branches = vec!["main".to_string(), "master".to_string()];
         github_branches.extend(config.github_branches.clone());
 
@@ -54,6 +59,19 @@ impl ChangelogCollector {
                 .expect("Failed to create HTTP client"),
             changelog_files: config.changelog_files.clone(),
             github_branches,
+            verbose,
+        }
+    }
+
+    fn log_verbose(&self, message: &str) {
+        if self.verbose {
+            eprintln!("[changelog] {}", message);
+        }
+    }
+
+    fn log_verbose_detail(&self, label: &str, message: &str) {
+        if self.verbose {
+            eprintln!("[changelog] {}: {}", label, message);
         }
     }
 
@@ -65,10 +83,22 @@ impl ChangelogCollector {
         new_version: &str,
         custom_url: Option<&str>,
     ) -> Result<PackageChangelog> {
+        self.log_verbose(&format!(
+            "Collecting changelog for {} ({} -> {})",
+            package_name, old_version, new_version
+        ));
         // Try custom URL first if provided
         let raw_content = if let Some(url) = custom_url {
+            self.log_verbose(&format!(
+                "Trying custom changelog URL for {}: {}",
+                package_name, url
+            ));
             self.fetch_url_content(url).await.ok().flatten()
         } else {
+            self.log_verbose(&format!(
+                "Trying PyPI metadata for {}",
+                package_name
+            ));
             self.try_fetch_from_pypi(package_name)
                 .await
                 .ok()
@@ -76,21 +106,50 @@ impl ChangelogCollector {
         };
 
         let mut entries = if let Some(ref content) = raw_content {
+            self.log_verbose_detail(
+                "Fetched changelog content",
+                &format!("{} bytes received", content.len()),
+            );
             self.parse_changelog(content, old_version, new_version)
         } else {
+            self.log_verbose(&format!(
+                "No changelog content fetched for {}",
+                package_name
+            ));
             Vec::new()
         };
 
         if entries.is_empty() && custom_url.is_none() {
+            self.log_verbose(&format!(
+                "No changelog entries found yet for {}, trying PyPI release metadata",
+                package_name
+            ));
             if let Ok(Some(content)) = self
                 .try_fetch_from_pypi_release(package_name, new_version)
                 .await
             {
+                self.log_verbose_detail(
+                    "Fetched PyPI release changelog content",
+                    &format!("{} bytes received", content.len()),
+                );
                 let fallback_entries = self.parse_changelog(&content, old_version, new_version);
                 if !fallback_entries.is_empty() {
                     entries = fallback_entries;
                 }
             }
+        }
+
+        if entries.is_empty() {
+            self.log_verbose(&format!(
+                "No changelog entries extracted for {}",
+                package_name
+            ));
+        } else {
+            self.log_verbose(&format!(
+                "Collected {} changelog entries for {}",
+                entries.len(),
+                package_name
+            ));
         }
 
         Ok(PackageChangelog {
@@ -106,9 +165,15 @@ impl ChangelogCollector {
     async fn try_fetch_from_pypi(&self, package_name: &str) -> Result<Option<String>> {
         let url = format!("https://pypi.org/pypi/{}/json", package_name);
 
+        self.log_verbose(&format!("Fetching PyPI metadata: {}", url));
         let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "PyPI metadata request failed for {}: {}",
+                package_name,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -126,9 +191,16 @@ impl ChangelogCollector {
     ) -> Result<Option<String>> {
         let url = format!("https://pypi.org/pypi/{}/{}/json", package_name, version);
 
+        self.log_verbose(&format!("Fetching PyPI release metadata: {}", url));
         let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "PyPI release request failed for {} {}: {}",
+                package_name,
+                version,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -146,6 +218,7 @@ impl ChangelogCollector {
         // Try to get changelog from description
         if let Some(description) = data["info"]["description"].as_str() {
             if Self::looks_like_changelog(description) {
+                self.log_verbose("Using changelog content from PyPI description");
                 return Ok(Some(description.to_string()));
             }
         }
@@ -154,6 +227,10 @@ impl ChangelogCollector {
         if let Some(urls) = data["info"]["project_urls"].as_object() {
             for key in ["Changelog", "Changes", "History", "Release Notes"] {
                 if let Some(changelog_url) = urls.get(key).and_then(|v| v.as_str()) {
+                    self.log_verbose(&format!(
+                        "Trying PyPI project URL ({}) for changelog: {}",
+                        key, changelog_url
+                    ));
                     if let Ok(Some(content)) = self.fetch_url_content(changelog_url).await {
                         return Ok(Some(content));
                     }
@@ -166,6 +243,10 @@ impl ChangelogCollector {
             for key in ["Homepage", "Source", "Repository", "GitHub"] {
                 if let Some(url) = urls.get(key).and_then(|v| v.as_str()) {
                     if url.contains("github.com") {
+                        self.log_verbose(&format!(
+                            "Trying GitHub changelog lookup from {} URL: {}",
+                            key, url
+                        ));
                         if let Ok(Some(content)) = self.try_github_changelog(url).await {
                             return Ok(Some(content));
                         }
@@ -177,6 +258,10 @@ impl ChangelogCollector {
         // Also check home_page
         if let Some(home_page) = data["info"]["home_page"].as_str() {
             if home_page.contains("github.com") {
+                self.log_verbose(&format!(
+                    "Trying GitHub changelog lookup from home_page: {}",
+                    home_page
+                ));
                 if let Ok(Some(content)) = self.try_github_changelog(home_page).await {
                     return Ok(Some(content));
                 }
@@ -200,9 +285,15 @@ impl ChangelogCollector {
 
     /// Fetch content from a URL
     async fn fetch_url_content(&self, url: &str) -> Result<Option<String>> {
+        self.log_verbose(&format!("Fetching URL content: {}", url));
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "URL content request failed: {} ({})",
+                url,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -221,6 +312,10 @@ impl ChangelogCollector {
                 caps.get(2).unwrap().as_str().trim_end_matches(".git"),
             )
         } else {
+            self.log_verbose(&format!(
+                "Could not parse GitHub URL for changelog lookup: {}",
+                github_url
+            ));
             return Ok(None);
         };
 
@@ -232,6 +327,10 @@ impl ChangelogCollector {
                     owner, repo, branch, file
                 );
 
+                self.log_verbose(&format!(
+                    "Trying GitHub raw changelog URL: {}",
+                    raw_url
+                ));
                 if let Ok(Some(content)) = self.fetch_url_content(&raw_url).await {
                     return Ok(Some(content));
                 }
@@ -248,19 +347,47 @@ impl ChangelogCollector {
         old_version: &str,
         new_version: &str,
     ) -> Vec<ChangelogEntry> {
+        self.log_verbose_detail(
+            "Parsing changelog",
+            &format!(
+                "old={}, new={}, content_len={}",
+                old_version,
+                new_version,
+                content.len()
+            ),
+        );
         // Try different changelog formats
         if let Some(parsed) = self.try_parse_markdown_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("Markdown parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("Markdown parser found no entries");
         }
 
         if let Some(parsed) = self.try_parse_rst_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("RST parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("RST parser found no entries");
         }
 
         if let Some(parsed) = self.try_parse_generic_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("Generic parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("Generic parser found no entries");
         }
 
+        self.log_verbose("No changelog parser matched any entries");
         Vec::new()
     }
 
@@ -272,7 +399,7 @@ impl ChangelogCollector {
         new_version: &str,
     ) -> Option<Vec<ChangelogEntry>> {
         let header_pattern = Regex::new(
-            r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*[-–—]\s*(.+))?$",
+            r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*(?:[-–—]\s*(.+)|\(([^)]+)\)))?$",
         )
         .ok()?;
 
@@ -284,8 +411,12 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         for line in content.lines() {
             if let Some(caps) = header_pattern.captures(line) {
+                total_headers += 1;
                 if let Some(mut entry) = current_entry.take() {
                     entry.content = content_buffer.trim().to_string();
                     if !entry.content.is_empty() {
@@ -295,12 +426,16 @@ impl ChangelogCollector {
                 }
 
                 let version = caps.get(1).unwrap().as_str();
-                let date = caps.get(2).map(|m| m.as_str().trim().to_string());
+                let date = caps
+                    .get(2)
+                    .or_else(|| caps.get(3))
+                    .map(|m| m.as_str().trim().to_string());
                 let ver_normalized = normalize_version(version);
 
                 if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                     && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                 {
+                    matched_headers += 1;
                     capture_content = true;
                     current_entry = Some(ChangelogEntry {
                         version: version.to_string(),
@@ -322,6 +457,16 @@ impl ChangelogCollector {
                 entries.push(entry);
             }
         }
+
+        self.log_verbose_detail(
+            "Markdown parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
 
         if entries.is_empty() {
             None
@@ -350,6 +495,9 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
@@ -358,6 +506,7 @@ impl ChangelogCollector {
                 let has_underline = i + 1 < lines.len() && underline_pattern.is_match(lines[i + 1]);
 
                 if has_underline {
+                    total_headers += 1;
                     if let Some(mut entry) = current_entry.take() {
                         entry.content = content_buffer.trim().to_string();
                         if !entry.content.is_empty() {
@@ -373,6 +522,7 @@ impl ChangelogCollector {
                     if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                         && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                     {
+                        matched_headers += 1;
                         capture_content = true;
                         current_entry = Some(ChangelogEntry {
                             version: version.to_string(),
@@ -403,6 +553,16 @@ impl ChangelogCollector {
             }
         }
 
+        self.log_verbose_detail(
+            "RST parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
+
         if entries.is_empty() {
             None
         } else {
@@ -430,6 +590,9 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         for line in content.lines() {
             if let Some(caps) = header_pattern.captures(line) {
                 let version = caps.get(1).unwrap().as_str();
@@ -441,6 +604,8 @@ impl ChangelogCollector {
                     }
                     continue;
                 }
+
+                total_headers += 1;
 
                 if let Some(mut entry) = current_entry.take() {
                     entry.content = content_buffer.trim().to_string();
@@ -456,6 +621,7 @@ impl ChangelogCollector {
                 if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                     && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                 {
+                    matched_headers += 1;
                     capture_content = true;
                     current_entry = Some(ChangelogEntry {
                         version: version.to_string(),
@@ -477,6 +643,16 @@ impl ChangelogCollector {
                 entries.push(entry);
             }
         }
+
+        self.log_verbose_detail(
+            "Generic parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
 
         if entries.is_empty() {
             None

@@ -225,7 +225,7 @@ async fn rebuild_changelog_from_tags(
         )?);
     }
 
-    let collector = ChangelogCollector::with_config(&config.changelog);
+    let collector = ChangelogCollector::with_config_verbose(&config.changelog, verbose);
     let mut rendered_entries = Vec::new();
 
     for window in snapshots.windows(2).zip(version_tags.windows(2)) {
@@ -756,7 +756,7 @@ async fn cmd_update_release(
         println!("{}", " STEP 2: Collecting Changelogs".cyan().bold());
         println!("{}", "═".repeat(60).cyan());
 
-        let collector = ChangelogCollector::with_config(&config.changelog);
+        let collector = ChangelogCollector::with_config_verbose(&config.changelog, verbose);
         let spinner = create_spinner("Fetching changelogs from packages...");
 
         let changelogs = collector
@@ -1047,7 +1047,7 @@ async fn cmd_changelog(
 
     println!("{}", "\nFetching changelogs...".cyan());
 
-    let collector = ChangelogCollector::with_config(&config.changelog);
+    let collector = ChangelogCollector::with_config_verbose(&config.changelog, verbose);
     let changelogs = collector
         .collect_changelogs(&updates, &config.packages)
         .await?;
