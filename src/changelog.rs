@@ -495,10 +495,13 @@ impl ChangelogCollector {
 
         for update in updates {
             // Find the package config to get custom changelog URL
-            let custom_url = package_configs
+            let package_config = package_configs
                 .iter()
-                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name)
-                .and_then(|p| p.changelog_url.as_deref());
+                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name);
+            if matches!(package_config, Some(config) if !config.include_in_changelog) {
+                continue;
+            }
+            let custom_url = package_config.and_then(|p| p.changelog_url.as_deref());
 
             match self
                 .fetch_changelog(
@@ -902,7 +905,7 @@ fn normalize_version(version: &str) -> Vec<u32> {
 
     for (i, part) in parts.iter().enumerate() {
         // For major, minor, patch we take leading digits
-        let mut digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
         if digits.is_empty() {
             break;
         }
@@ -959,6 +962,8 @@ fn compare_versions(a: &[u32], b: &[u32]) -> i32 {
 mod tests {
     use super::*;
     use serde_json::json;
+    use crate::buildout::VersionUpdate;
+    use crate::config::PackageConfig;
 
     #[test]
     fn test_normalize_version() {
@@ -1028,14 +1033,12 @@ mod tests {
     :target: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml
 
 plonemeeting.portal.core
-========================
 
 ``plonemeeting.portal.core`` is a comprehensive package designed to facilitate public access
 to decisions and publications from local authorities. By leveraging this package, municipalities and other institutions
 can ensure transparency and foster public trust by making their decisions readily available to the public.
 
 Changelog
-=========
 
 2.2.6 (2025-12-11)
 ------------------
@@ -1068,7 +1071,6 @@ Changelog
     fn test_parse_changelog_extracts_rst_entries_from_description() {
         let collector = ChangelogCollector::new();
         let description = r#"Changelog
-=========
 
 2.2.6 (2025-12-11)
 ------------------
@@ -1109,5 +1111,27 @@ Changelog
         let result = collector.parse_pypi_payload(&payload).await.unwrap();
 
         assert!(result.is_none());
+    async fn test_collect_changelogs_skips_excluded_packages() {
+        let collector = ChangelogCollector::new();
+        let updates = vec![VersionUpdate {
+            package_name: "example".to_string(),
+            old_version: "1.0.0".to_string(),
+            new_version: "1.1.0".to_string(),
+        }];
+        let packages = vec![PackageConfig {
+            name: "example".to_string(),
+            version_constraint: None,
+            buildout_name: None,
+            allow_prerelease: false,
+            changelog_url: None,
+            include_in_changelog: false,
+        }];
+
+        let changelogs = collector
+            .collect_changelogs(&updates, &packages)
+            .await
+            .expect("collect changelogs");
+
+        assert!(changelogs.is_empty());
     }
 }
