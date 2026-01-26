@@ -1100,7 +1100,7 @@ Changelog
         let collector = ChangelogCollector::new();
         let payload = json!({
             "info": {
-                "description": "Package summary without release notes.",
+                "description": "Package summary without history section.",
                 "project_urls": {},
                 "home_page": null
             }
