@@ -36,6 +36,7 @@ pub struct ChangelogCollector {
     client: Client,
     changelog_files: Vec<String>,
     github_branches: Vec<String>,
+    verbose: bool,
 }
 
 impl ChangelogCollector {
@@ -44,6 +45,10 @@ impl ChangelogCollector {
     }
 
     pub fn with_config(config: &ChangelogConfig) -> Self {
+        Self::with_config_verbose(config, false)
+    }
+
+    pub fn with_config_verbose(config: &ChangelogConfig, verbose: bool) -> Self {
         let mut github_branches = vec!["main".to_string(), "master".to_string()];
         github_branches.extend(config.github_branches.clone());
 
@@ -54,6 +59,13 @@ impl ChangelogCollector {
                 .expect("Failed to create HTTP client"),
             changelog_files: config.changelog_files.clone(),
             github_branches,
+            verbose,
+        }
+    }
+
+    fn log_verbose(&self, message: &str) {
+        if self.verbose {
+            eprintln!("[changelog] {}", message);
         }
     }
 
@@ -65,10 +77,22 @@ impl ChangelogCollector {
         new_version: &str,
         custom_url: Option<&str>,
     ) -> Result<PackageChangelog> {
+        self.log_verbose(&format!(
+            "Collecting changelog for {} ({} -> {})",
+            package_name, old_version, new_version
+        ));
         // Try custom URL first if provided
         let raw_content = if let Some(url) = custom_url {
+            self.log_verbose(&format!(
+                "Trying custom changelog URL for {}: {}",
+                package_name, url
+            ));
             self.fetch_url_content(url).await.ok().flatten()
         } else {
+            self.log_verbose(&format!(
+                "Trying PyPI metadata for {}",
+                package_name
+            ));
             self.try_fetch_from_pypi(package_name)
                 .await
                 .ok()
@@ -82,6 +106,10 @@ impl ChangelogCollector {
         };
 
         if entries.is_empty() && custom_url.is_none() {
+            self.log_verbose(&format!(
+                "No changelog entries found yet for {}, trying PyPI release metadata",
+                package_name
+            ));
             if let Ok(Some(content)) = self
                 .try_fetch_from_pypi_release(package_name, new_version)
                 .await
@@ -91,6 +119,19 @@ impl ChangelogCollector {
                     entries = fallback_entries;
                 }
             }
+        }
+
+        if entries.is_empty() {
+            self.log_verbose(&format!(
+                "No changelog entries extracted for {}",
+                package_name
+            ));
+        } else {
+            self.log_verbose(&format!(
+                "Collected {} changelog entries for {}",
+                entries.len(),
+                package_name
+            ));
         }
 
         Ok(PackageChangelog {
@@ -106,9 +147,15 @@ impl ChangelogCollector {
     async fn try_fetch_from_pypi(&self, package_name: &str) -> Result<Option<String>> {
         let url = format!("https://pypi.org/pypi/{}/json", package_name);
 
+        self.log_verbose(&format!("Fetching PyPI metadata: {}", url));
         let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "PyPI metadata request failed for {}: {}",
+                package_name,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -126,9 +173,16 @@ impl ChangelogCollector {
     ) -> Result<Option<String>> {
         let url = format!("https://pypi.org/pypi/{}/{}/json", package_name, version);
 
+        self.log_verbose(&format!("Fetching PyPI release metadata: {}", url));
         let response = self.client.get(&url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "PyPI release request failed for {} {}: {}",
+                package_name,
+                version,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -146,6 +200,7 @@ impl ChangelogCollector {
         // Try to get changelog from description
         if let Some(description) = data["info"]["description"].as_str() {
             if Self::looks_like_changelog(description) {
+                self.log_verbose("Using changelog content from PyPI description");
                 return Ok(Some(description.to_string()));
             }
         }
@@ -154,6 +209,10 @@ impl ChangelogCollector {
         if let Some(urls) = data["info"]["project_urls"].as_object() {
             for key in ["Changelog", "Changes", "History", "Release Notes"] {
                 if let Some(changelog_url) = urls.get(key).and_then(|v| v.as_str()) {
+                    self.log_verbose(&format!(
+                        "Trying PyPI project URL ({}) for changelog: {}",
+                        key, changelog_url
+                    ));
                     if let Ok(Some(content)) = self.fetch_url_content(changelog_url).await {
                         return Ok(Some(content));
                     }
@@ -166,6 +225,10 @@ impl ChangelogCollector {
             for key in ["Homepage", "Source", "Repository", "GitHub"] {
                 if let Some(url) = urls.get(key).and_then(|v| v.as_str()) {
                     if url.contains("github.com") {
+                        self.log_verbose(&format!(
+                            "Trying GitHub changelog lookup from {} URL: {}",
+                            key, url
+                        ));
                         if let Ok(Some(content)) = self.try_github_changelog(url).await {
                             return Ok(Some(content));
                         }
@@ -177,6 +240,10 @@ impl ChangelogCollector {
         // Also check home_page
         if let Some(home_page) = data["info"]["home_page"].as_str() {
             if home_page.contains("github.com") {
+                self.log_verbose(&format!(
+                    "Trying GitHub changelog lookup from home_page: {}",
+                    home_page
+                ));
                 if let Ok(Some(content)) = self.try_github_changelog(home_page).await {
                     return Ok(Some(content));
                 }
@@ -200,9 +267,15 @@ impl ChangelogCollector {
 
     /// Fetch content from a URL
     async fn fetch_url_content(&self, url: &str) -> Result<Option<String>> {
+        self.log_verbose(&format!("Fetching URL content: {}", url));
         let response = self.client.get(url).send().await?;
 
         if !response.status().is_success() {
+            self.log_verbose(&format!(
+                "URL content request failed: {} ({})",
+                url,
+                response.status()
+            ));
             return Ok(None);
         }
 
@@ -221,6 +294,10 @@ impl ChangelogCollector {
                 caps.get(2).unwrap().as_str().trim_end_matches(".git"),
             )
         } else {
+            self.log_verbose(&format!(
+                "Could not parse GitHub URL for changelog lookup: {}",
+                github_url
+            ));
             return Ok(None);
         };
 
@@ -232,6 +309,10 @@ impl ChangelogCollector {
                     owner, repo, branch, file
                 );
 
+                self.log_verbose(&format!(
+                    "Trying GitHub raw changelog URL: {}",
+                    raw_url
+                ));
                 if let Ok(Some(content)) = self.fetch_url_content(&raw_url).await {
                     return Ok(Some(content));
                 }
