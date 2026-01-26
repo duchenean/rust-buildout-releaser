@@ -69,6 +69,12 @@ impl ChangelogCollector {
         }
     }
 
+    fn log_verbose_detail(&self, label: &str, message: &str) {
+        if self.verbose {
+            eprintln!("[changelog] {}: {}", label, message);
+        }
+    }
+
     /// Fetch changelog for a package from various sources
     pub async fn fetch_changelog(
         &self,
@@ -100,8 +106,16 @@ impl ChangelogCollector {
         };
 
         let mut entries = if let Some(ref content) = raw_content {
+            self.log_verbose_detail(
+                "Fetched changelog content",
+                &format!("{} bytes received", content.len()),
+            );
             self.parse_changelog(content, old_version, new_version)
         } else {
+            self.log_verbose(&format!(
+                "No changelog content fetched for {}",
+                package_name
+            ));
             Vec::new()
         };
 
@@ -114,6 +128,10 @@ impl ChangelogCollector {
                 .try_fetch_from_pypi_release(package_name, new_version)
                 .await
             {
+                self.log_verbose_detail(
+                    "Fetched PyPI release changelog content",
+                    &format!("{} bytes received", content.len()),
+                );
                 let fallback_entries = self.parse_changelog(&content, old_version, new_version);
                 if !fallback_entries.is_empty() {
                     entries = fallback_entries;
@@ -329,19 +347,47 @@ impl ChangelogCollector {
         old_version: &str,
         new_version: &str,
     ) -> Vec<ChangelogEntry> {
+        self.log_verbose_detail(
+            "Parsing changelog",
+            &format!(
+                "old={}, new={}, content_len={}",
+                old_version,
+                new_version,
+                content.len()
+            ),
+        );
         // Try different changelog formats
         if let Some(parsed) = self.try_parse_markdown_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("Markdown parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("Markdown parser found no entries");
         }
 
         if let Some(parsed) = self.try_parse_rst_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("RST parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("RST parser found no entries");
         }
 
         if let Some(parsed) = self.try_parse_generic_changelog(content, old_version, new_version) {
+            self.log_verbose_detail(
+                "Parser result",
+                &format!("Generic parser extracted {} entries", parsed.len()),
+            );
             return parsed;
+        } else {
+            self.log_verbose("Generic parser found no entries");
         }
 
+        self.log_verbose("No changelog parser matched any entries");
         Vec::new()
     }
 
@@ -365,8 +411,12 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         for line in content.lines() {
             if let Some(caps) = header_pattern.captures(line) {
+                total_headers += 1;
                 if let Some(mut entry) = current_entry.take() {
                     entry.content = content_buffer.trim().to_string();
                     if !entry.content.is_empty() {
@@ -382,6 +432,7 @@ impl ChangelogCollector {
                 if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                     && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                 {
+                    matched_headers += 1;
                     capture_content = true;
                     current_entry = Some(ChangelogEntry {
                         version: version.to_string(),
@@ -403,6 +454,16 @@ impl ChangelogCollector {
                 entries.push(entry);
             }
         }
+
+        self.log_verbose_detail(
+            "Markdown parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
 
         if entries.is_empty() {
             None
@@ -431,6 +492,9 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         let mut i = 0;
         while i < lines.len() {
             let line = lines[i];
@@ -439,6 +503,7 @@ impl ChangelogCollector {
                 let has_underline = i + 1 < lines.len() && underline_pattern.is_match(lines[i + 1]);
 
                 if has_underline {
+                    total_headers += 1;
                     if let Some(mut entry) = current_entry.take() {
                         entry.content = content_buffer.trim().to_string();
                         if !entry.content.is_empty() {
@@ -454,6 +519,7 @@ impl ChangelogCollector {
                     if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                         && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                     {
+                        matched_headers += 1;
                         capture_content = true;
                         current_entry = Some(ChangelogEntry {
                             version: version.to_string(),
@@ -484,6 +550,16 @@ impl ChangelogCollector {
             }
         }
 
+        self.log_verbose_detail(
+            "RST parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
+
         if entries.is_empty() {
             None
         } else {
@@ -511,6 +587,9 @@ impl ChangelogCollector {
         let old_ver_normalized = normalize_version(old_version);
         let new_ver_normalized = normalize_version(new_version);
 
+        let mut total_headers = 0;
+        let mut matched_headers = 0;
+
         for line in content.lines() {
             if let Some(caps) = header_pattern.captures(line) {
                 let version = caps.get(1).unwrap().as_str();
@@ -522,6 +601,8 @@ impl ChangelogCollector {
                     }
                     continue;
                 }
+
+                total_headers += 1;
 
                 if let Some(mut entry) = current_entry.take() {
                     entry.content = content_buffer.trim().to_string();
@@ -537,6 +618,7 @@ impl ChangelogCollector {
                 if compare_versions(&ver_normalized, &old_ver_normalized) > 0
                     && compare_versions(&ver_normalized, &new_ver_normalized) <= 0
                 {
+                    matched_headers += 1;
                     capture_content = true;
                     current_entry = Some(ChangelogEntry {
                         version: version.to_string(),
@@ -558,6 +640,16 @@ impl ChangelogCollector {
                 entries.push(entry);
             }
         }
+
+        self.log_verbose_detail(
+            "Generic parser",
+            &format!(
+                "headers={}, matched_range={}, entries={}",
+                total_headers,
+                matched_headers,
+                entries.len()
+            ),
+        );
 
         if entries.is_empty() {
             None
