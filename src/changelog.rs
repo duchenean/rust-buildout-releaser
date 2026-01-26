@@ -69,14 +69,29 @@ impl ChangelogCollector {
         let raw_content = if let Some(url) = custom_url {
             self.fetch_url_content(url).await.ok().flatten()
         } else {
-            self.try_fetch_from_pypi(package_name).await.ok().flatten()
+            self.try_fetch_from_pypi(package_name)
+                .await
+                .ok()
+                .flatten()
         };
 
-        let entries = if let Some(ref content) = raw_content {
+        let mut entries = if let Some(ref content) = raw_content {
             self.parse_changelog(content, old_version, new_version)
         } else {
             Vec::new()
         };
+
+        if entries.is_empty() && custom_url.is_none() {
+            if let Ok(Some(content)) = self
+                .try_fetch_from_pypi_release(package_name, new_version)
+                .await
+            {
+                let fallback_entries = self.parse_changelog(&content, old_version, new_version);
+                if !fallback_entries.is_empty() {
+                    entries = fallback_entries;
+                }
+            }
+        }
 
         Ok(PackageChangelog {
             package_name: package_name.to_string(),
@@ -101,6 +116,33 @@ impl ChangelogCollector {
             ReleaserError::PyPiError(format!("Failed to parse PyPI response: {}", e))
         })?;
 
+        self.parse_pypi_payload(&data).await
+    }
+
+    async fn try_fetch_from_pypi_release(
+        &self,
+        package_name: &str,
+        version: &str,
+    ) -> Result<Option<String>> {
+        let url = format!("https://pypi.org/pypi/{}/{}/json", package_name, version);
+
+        let response = self.client.get(&url).send().await?;
+
+        if !response.status().is_success() {
+            return Ok(None);
+        }
+
+        let data: serde_json::Value = response.json().await.map_err(|e| {
+            ReleaserError::PyPiError(format!("Failed to parse PyPI response: {}", e))
+        })?;
+
+        self.parse_pypi_payload(&data).await
+    }
+
+    async fn parse_pypi_payload(
+        &self,
+        data: &serde_json::Value,
+    ) -> Result<Option<String>> {
         // Try to get changelog from description
         if let Some(description) = data["info"]["description"].as_str() {
             if Self::looks_like_changelog(description) {
@@ -919,6 +961,7 @@ fn compare_versions(a: &[u32], b: &[u32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
     use crate::buildout::VersionUpdate;
     use crate::config::PackageConfig;
 
@@ -977,6 +1020,100 @@ mod tests {
 
         assert!(result.starts_with("# Changelog"));
         assert!(result.contains("## Release 1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_parse_pypi_payload_uses_description_changelog() {
+        let collector = ChangelogCollector::new();
+        let description = r#".. This README is meant for consumption by humans and pypi. Pypi can render rst files so please do not use Sphinx features.
+   If you want to learn more about writing documentation, please check out: http://docs.plone.org/about/documentation_styleguide.html
+   This text does not appear on pypi or github. It is a comment.
+
+.. image:: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml/badge.svg?branch=master
+    :target: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml
+
+plonemeeting.portal.core
+========================
+
+``plonemeeting.portal.core`` is a comprehensive package designed to facilitate public access
+to decisions and publications from local authorities. By leveraging this package, municipalities and other institutions
+can ensure transparency and foster public trust by making their decisions readily available to the public.
+
+Changelog
+=========
+
+2.2.6 (2025-12-11)
+------------------
+
+- Sort publications on effective date and sortable_title on faceted view.
+  [aduchene]
+
+2.2.5 (2025-10-24)
+------------------
+
+- Remove `x-twitter` in `site_socials` actions.
+  [aduchene]
+"#;
+        let payload = json!({
+            "info": {
+                "description": description,
+                "project_urls": {},
+                "home_page": null
+            }
+        });
+
+        let result = collector.parse_pypi_payload(&payload).await.unwrap();
+
+        let content = result.expect("expected changelog content from description");
+        assert!(content.contains("Changelog"));
+        assert!(content.contains("2.2.6 (2025-12-11)"));
+    }
+
+    #[test]
+    fn test_parse_changelog_extracts_rst_entries_from_description() {
+        let collector = ChangelogCollector::new();
+        let description = r#"Changelog
+=========
+
+2.2.6 (2025-12-11)
+------------------
+
+- Sort publications on effective date and sortable_title on faceted view.
+  [aduchene]
+
+2.2.5 (2025-10-24)
+------------------
+
+- Remove `x-twitter` in `site_socials` actions.
+  [aduchene]
+"#;
+
+        let entries = collector.parse_changelog(description, "2.2.5", "2.2.6");
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].version, "2.2.6");
+        assert_eq!(entries[0].date.as_deref(), Some("2025-12-11"));
+        assert!(
+            entries[0]
+                .content
+                .contains("Sort publications on effective date")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_parse_pypi_payload_returns_none_without_changelog() {
+        let collector = ChangelogCollector::new();
+        let payload = json!({
+            "info": {
+                "description": "Package summary without any release information.",
+                "project_urls": {},
+                "home_page": null
+            }
+        });
+
+        let result = collector.parse_pypi_payload(&payload).await.unwrap();
+
+        assert!(result.is_none());
     }
 
     #[tokio::test]
