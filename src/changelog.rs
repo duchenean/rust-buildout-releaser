@@ -453,10 +453,13 @@ impl ChangelogCollector {
 
         for update in updates {
             // Find the package config to get custom changelog URL
-            let custom_url = package_configs
+            let package_config = package_configs
                 .iter()
-                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name)
-                .and_then(|p| p.changelog_url.as_deref());
+                .find(|p| p.name == update.package_name || p.buildout_name() == update.package_name);
+            if matches!(package_config, Some(config) if !config.include_in_changelog) {
+                continue;
+            }
+            let custom_url = package_config.and_then(|p| p.changelog_url.as_deref());
 
             match self
                 .fetch_changelog(
@@ -860,7 +863,7 @@ fn normalize_version(version: &str) -> Vec<u32> {
 
     for (i, part) in parts.iter().enumerate() {
         // For major, minor, patch we take leading digits
-        let mut digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
+        let digits: String = part.chars().take_while(|c| c.is_ascii_digit()).collect();
         if digits.is_empty() {
             break;
         }
@@ -916,6 +919,8 @@ fn compare_versions(a: &[u32], b: &[u32]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::buildout::VersionUpdate;
+    use crate::config::PackageConfig;
 
     #[test]
     fn test_normalize_version() {
@@ -972,5 +977,30 @@ mod tests {
 
         assert!(result.starts_with("# Changelog"));
         assert!(result.contains("## Release 1.0.0"));
+    }
+
+    #[tokio::test]
+    async fn test_collect_changelogs_skips_excluded_packages() {
+        let collector = ChangelogCollector::new();
+        let updates = vec![VersionUpdate {
+            package_name: "example".to_string(),
+            old_version: "1.0.0".to_string(),
+            new_version: "1.1.0".to_string(),
+        }];
+        let packages = vec![PackageConfig {
+            name: "example".to_string(),
+            version_constraint: None,
+            buildout_name: None,
+            allow_prerelease: false,
+            changelog_url: None,
+            include_in_changelog: false,
+        }];
+
+        let changelogs = collector
+            .collect_changelogs(&updates, &packages)
+            .await
+            .expect("collect changelogs");
+
+        assert!(changelogs.is_empty());
     }
 }
