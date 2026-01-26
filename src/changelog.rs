@@ -1033,12 +1033,14 @@ mod tests {
     :target: https://github.com/IMIO/plonemeeting.portal.core/actions/workflows/tests.yml
 
 plonemeeting.portal.core
+========================
 
 ``plonemeeting.portal.core`` is a comprehensive package designed to facilitate public access
 to decisions and publications from local authorities. By leveraging this package, municipalities and other institutions
 can ensure transparency and foster public trust by making their decisions readily available to the public.
 
 Changelog
+=========
 
 2.2.6 (2025-12-11)
 ------------------
@@ -1071,6 +1073,7 @@ Changelog
     fn test_parse_changelog_extracts_rst_entries_from_description() {
         let collector = ChangelogCollector::new();
         let description = r#"Changelog
+=========
 
 2.2.6 (2025-12-11)
 ------------------
@@ -1102,7 +1105,7 @@ Changelog
         let collector = ChangelogCollector::new();
         let payload = json!({
             "info": {
-                "description": "Package summary without history section.",
+                "description": "Package summary without any release information.",
                 "project_urls": {},
                 "home_page": null
             }
@@ -1111,6 +1114,9 @@ Changelog
         let result = collector.parse_pypi_payload(&payload).await.unwrap();
 
         assert!(result.is_none());
+    }
+
+    #[tokio::test]
     async fn test_collect_changelogs_skips_excluded_packages() {
         let collector = ChangelogCollector::new();
         let updates = vec![VersionUpdate {
