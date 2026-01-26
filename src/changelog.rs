@@ -399,7 +399,7 @@ impl ChangelogCollector {
         new_version: &str,
     ) -> Option<Vec<ChangelogEntry>> {
         let header_pattern = Regex::new(
-            r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*[-–—]\s*(.+))?$",
+            r"(?m)^##\s+\[?v?(\d+\.\d+(?:\.\d+)?(?:[._-]?\w+)?)\]?(?:\s*(?:[-–—]\s*(.+)|\(([^)]+)\)))?$",
         )
         .ok()?;
 
@@ -426,7 +426,10 @@ impl ChangelogCollector {
                 }
 
                 let version = caps.get(1).unwrap().as_str();
-                let date = caps.get(2).map(|m| m.as_str().trim().to_string());
+                let date = caps
+                    .get(2)
+                    .or_else(|| caps.get(3))
+                    .map(|m| m.as_str().trim().to_string());
                 let ver_normalized = normalize_version(version);
 
                 if compare_versions(&ver_normalized, &old_ver_normalized) > 0
